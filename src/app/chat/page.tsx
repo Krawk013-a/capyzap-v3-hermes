@@ -10,7 +10,7 @@ export default function ChatPage() {
         <img src="/icons/capy.svg" alt="" className="mx-auto mb-4 h-28 w-28 opacity-90" />
         <p className="text-lg font-bold text-capy-dark">CapyZap Web 🌿</p>
         <p className="mt-1 text-sm text-capy-dark/60">
-          Escolhe uma conversa à esquerda ou busca uma amiga pra começar.
+          Escolhe uma conversa à esquerda ou busca alguém pra começar.
         </p>
       </div>
     </section>

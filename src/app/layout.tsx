@@ -12,6 +12,9 @@ export const metadata: Metadata = {
     title: "CapyZap",
     statusBarStyle: "black-translucent",
   },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export const viewport: Viewport = {

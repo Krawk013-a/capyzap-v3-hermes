@@ -32,8 +32,8 @@ export async function registerPush(): Promise<string | null> {
   const reg = await navigator.serviceWorker.register("/sw.js");
   await navigator.serviceWorker.ready;
 
-  // chave pública (var de ambiente — vercel/replaceme)
-  const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  // chave pública (sanitizada — colar com enter quebra o base64url)
+  const vapid = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
   if (!vapid) return "no-vapid-key";
 
   // inscreve (ou reutiliza inscrição existente)
@@ -67,7 +67,41 @@ export async function registerPush(): Promise<string | null> {
     .from("push_subscriptions")
     .upsert(payload, { onConflict: "endpoint" });
 
-  return error ? "save-failed" : "ok";
+  // se a tabela ainda não existe (SQL não rodado), a inscrição local
+  // já foi feita — tratamos como "parcial" e avisamos o que falta
+  if (error) {
+    console.warn("[push] falha ao salvar inscrição:", error.message);
+    return error.code === "42P01" ? "table-missing" : "save-failed";
+  }
+  return "ok";
+}
+
+/**
+ * Verifica se o push está REALMENTE ativo nesta máquina:
+ * permissão concedida + inscrição push salva no banco p/ este usuário.
+ */
+export async function isPushActive(): Promise<boolean> {
+  if (typeof Notification === "undefined") return false;
+  if (Notification.permission !== "granted") return false;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+  try {
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return false;
+    const supabase = getSupabaseBrowserClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { data } = await supabase
+      .from("push_subscriptions")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("endpoint", sub.endpoint)
+      .maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
 }
 
 /** Estado atual da permissão de notificação. */

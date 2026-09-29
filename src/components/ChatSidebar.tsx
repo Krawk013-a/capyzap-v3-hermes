@@ -16,7 +16,7 @@ import {
 import { fmtChatStamp, sanitizeSearch } from "@/lib/format";
 import { useToast } from "@/components/Toast";
 import Avatar from "@/components/Avatar";
-import { registerPush, pushPermission } from "@/lib/push";
+import { registerPush, isPushActive } from "@/lib/push";
 import type { ChatListItem, Profile } from "@/types";
 
 /**
@@ -47,7 +47,7 @@ export default function ChatSidebar() {
   const [groupSearch, setGroupSearch] = useState("");
   const [groupFound, setGroupFound] = useState<Profile[]>([]);
   const [busy, setBusy] = useState(false);
-  const [pushState, setPushState] = useState<string | null>(null); // null=carregando
+  const [pushState, setPushState] = useState<"checking" | "active" | "inactive" | "denied" | "unsupported" | "no-vapid" | "partial">("checking");
   const [pushWorking, setPushWorking] = useState(false);
   const chatsRef = useRef<ChatListItem[]>([]);
   chatsRef.current = chats;
@@ -144,21 +144,52 @@ export default function ChatSidebar() {
     };
   }, [refresh, router, pushToast]);
 
-  // estado do push ao carregar (só mostra o card se não estiver ativo)
+  // estado REAL do push: permissão + inscrição salva no banco
   useEffect(() => {
-    const perm = pushPermission();
-    setPushState(perm);
+    let alive = true;
+    (async () => {
+      if (
+        typeof Notification === "undefined" ||
+        !("serviceWorker" in navigator) ||
+        !("PushManager" in window)
+      ) {
+        if (alive) setPushState("unsupported");
+        return;
+      }
+      if (Notification.permission === "denied") {
+        if (alive) setPushState("denied");
+        return;
+      }
+      if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) {
+        if (alive) setPushState("no-vapid");
+        return;
+      }
+      const active = await isPushActive();
+      if (alive) setPushState(active ? "active" : "inactive");
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   async function handleEnablePush() {
     setPushWorking(true);
     try {
       const result = await registerPush();
-      setPushState(result === "ok" ? "granted" : result);
       if (result === "ok") {
-        pushToast({ title: "Notificações ativadas! 🔔", body: "Agora você é avisada de mensagens novas." });
+        setPushState("active");
+        pushToast({
+          title: "Notificações ativadas! 🔔",
+          body: "Você recebe avisos de mensagens novas.",
+        });
       } else if (result === "denied") {
-        pushToast({ title: "Notificação bloqueada 😕", body: "Libera nas configurações do navegador." });
+        setPushState("denied");
+      } else if (result === "table-missing") {
+        setPushState("partial");
+      } else if (result === "unsupported") {
+        setPushState("unsupported");
+      } else {
+        setPushState("inactive"); // falhou → continua oferecendo, mas sem loop
       }
     } finally {
       setPushWorking(false);
@@ -373,24 +404,28 @@ export default function ChatSidebar() {
         </div>
       )}
 
-      {/* card: ativar notificações push */}
-      {pushState !== null &&
-        pushState !== "granted" &&
-        pushState !== "unsupported" &&
-        pushState !== "no-vapid-key" && (
-          <div className="border-t border-capy-fur/10 bg-capy-bubble/50 px-4 py-3">
-            <p className="text-xs font-semibold text-capy-deep">
-              🔔 Quer ser avisada de mensagens novas?
-            </p>
-            <button
-              onClick={handleEnablePush}
-              disabled={pushWorking}
-              className="mt-2 w-full rounded-lg bg-capy-green px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
-            >
-              {pushWorking ? "Ativando…" : "Ativar notificações"}
-            </button>
-          </div>
-        )}
+      {/* card: ativar notificações push — só aparece quando dá pra ativar */}
+      {pushState === "inactive" && (
+        <div className="border-t border-capy-fur/10 bg-capy-bubble/50 px-4 py-3">
+          <p className="text-xs font-semibold text-capy-deep">
+            🔔 Quer receber aviso de mensagens novas?
+          </p>
+          <button
+            onClick={handleEnablePush}
+            disabled={pushWorking}
+            className="mt-2 w-full rounded-lg bg-capy-green px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
+          >
+            {pushWorking ? "Ativando…" : "Ativar notificações"}
+          </button>
+        </div>
+      )}
+      {pushState === "partial" && (
+        <div className="border-t border-capy-fur/10 bg-capy-bubble/50 px-4 py-3">
+          <p className="text-xs font-semibold text-capy-deep">
+            🔔 Quase lá! Roda o SQL do push no Supabase pra fechar.
+          </p>
+        </div>
+      )}
 
       {/* rodapé: sair */}
       <footer className="border-t border-capy-fur/10 px-4 py-2">
@@ -417,7 +452,7 @@ export default function ChatSidebar() {
           >
             <h2 className="mb-1 text-lg font-bold text-capy-dark">Novo grupo 👥</h2>
             <p className="mb-4 text-xs text-capy-dark/50">
-              Dá um nome e adiciona as amigas.
+              Dá um nome e adiciona as pessoas.
             </p>
 
             <input
