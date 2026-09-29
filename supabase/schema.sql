@@ -281,6 +281,11 @@ create policy "messages_delete_sender" on public.messages
 -- ============================================================
 -- 5) REALTIME
 -- ============================================================
+-- IMPORTANTE: com RLS ativo, o Supabase exige REPLICA IDENTITY FULL
+-- nas tabelas ou os eventos postgres_changes NÃO são entregues.
+alter table public.messages      replica identity full;
+alter table public.participants   replica identity full;
+
 do $$
 begin
   if not exists (select 1 from pg_publication_tables

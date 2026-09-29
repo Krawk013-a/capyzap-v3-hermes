@@ -126,17 +126,49 @@ export async function markConversationRead(conversationId: string) {
     .eq("user_id", user.id);
 }
 
-export async function sendTextMessage(conversationId: string, body: string, replyTo?: string | null) {
+export async function sendTextMessage(
+  conversationId: string,
+  body: string,
+  replyTo?: string | null
+): Promise<Message> {
   const { data: { user } } = await sb().auth.getUser();
   if (!user) throw new Error("not authenticated");
-  const { error } = await sb().from("messages").insert({
-    conversation_id: conversationId,
-    sender_id: user.id,
-    kind: "text",
-    body,
-    reply_to_id: replyTo ?? null,
-  });
+  const { data, error } = await sb()
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      sender_id: user.id,
+      kind: "text",
+      body,
+      reply_to_id: replyTo ?? null,
+    })
+    .select("*")
+    .single();
   if (error) throw error;
+  return data as Message;
+}
+
+/** Envia a mensagem de áudio e devolve a linha criada (p/ UI otimista). */
+export async function sendAudioMessage(
+  conversationId: string,
+  path: string,
+  duration: number
+): Promise<Message> {
+  const { data: { user } } = await sb().auth.getUser();
+  if (!user) throw new Error("not authenticated");
+  const { data, error } = await sb()
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      sender_id: user.id,
+      kind: "audio",
+      audio_url: path,
+      audio_duration: duration,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as Message;
 }
 
 /** Gera URL assinada do áudio (bucket privado). Cache-friendly (3600s). */
