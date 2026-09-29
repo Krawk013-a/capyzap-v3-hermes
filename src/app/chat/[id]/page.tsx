@@ -218,14 +218,30 @@ export default function ChatRoom() {
       const { error: upErr } = await supabase.storage
         .from("images")
         .upload(path, pendingImage, { contentType: pendingImage.type });
-      if (upErr) throw upErr;
+      if (upErr) {
+        console.error("[imagem] upload:", upErr.message);
+        if (upErr.message.includes("not found") || upErr.message.includes("Bucket not found")) {
+          setError("O bucket \"images\" não existe no Supabase — rode o migration-v2.sql 🦫");
+        } else if (upErr.message.includes("policy") || upErr.message.includes("row-level")) {
+          setError("Sem permissão no bucket \"images\" — rode o migration-v2.sql 🦫");
+        } else {
+          setError("Falha ao subir a foto: " + upErr.message);
+        }
+        return;
+      }
       const msg = await sendImageMessage(convoId, path);
       mergeMessage(msg);
       setPendingImage(null);
       setImagePreview(null);
       requestAnimationFrame(() => scrollToBottom());
-    } catch {
-      setError("Falha ao enviar a foto 🦫 tenta de novo.");
+    } catch (e) {
+      const m = e instanceof Error ? e.message : "";
+      console.error("[imagem] envio:", m);
+      if (m.includes("column") || m.includes("image_url")) {
+        setError("Falta a coluna image_url — rode o migration-v2.sql no SQL Editor 🦫");
+      } else {
+        setError("Falha ao enviar a foto 🦫 tenta de novo.");
+      }
     } finally {
       setUploadingImage(false);
     }
