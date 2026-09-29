@@ -148,6 +148,36 @@ export async function sendTextMessage(
   return data as Message;
 }
 
+/** Envia a mensagem de imagem e devolve a linha criada. */
+export async function sendImageMessage(
+  conversationId: string,
+  path: string
+): Promise<Message> {
+  const { data: { user } } = await sb().auth.getUser();
+  if (!user) throw new Error("not authenticated");
+  const { data, error } = await sb()
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      sender_id: user.id,
+      kind: "image",
+      image_url: path,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as Message;
+}
+
+/** URL assinada da imagem (bucket privado). */
+export async function getSignedImageUrl(path: string): Promise<string> {
+  const { data } = await sb()
+    .storage
+    .from("images")
+    .createSignedUrl(path, 3600);
+  return data?.signedUrl ?? "";
+}
+
 /** Envia a mensagem de áudio e devolve a linha criada (p/ UI otimista). */
 export async function sendAudioMessage(
   conversationId: string,

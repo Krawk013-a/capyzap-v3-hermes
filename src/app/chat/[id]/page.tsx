@@ -10,7 +10,9 @@ import {
   markConversationRead,
   sendTextMessage,
   sendAudioMessage,
+  sendImageMessage,
   getSignedAudioUrl,
+  getSignedImageUrl,
 } from "@/lib/data";
 import { fmtTime, fmtDayDivider, fmtDuration, pickRecorderMime, audioExtForMime } from "@/lib/format";
 import Avatar from "@/components/Avatar";
@@ -39,6 +41,10 @@ export default function ChatRoom() {
   const [recSeconds, setRecSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [otherLastRead, setOtherLastRead] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const recRef = useRef<{ rec: MediaRecorder; chunks: Blob[]; timer: number } | null>(null);
@@ -181,6 +187,49 @@ export default function ChatRoom() {
       }
     };
   }, [convoId, router, scrollToBottom]);
+
+  /** Usuário escolheu uma foto → mostra preview antes de enviar. */
+  function handlePickImage(f: File | null) {
+    setError(null);
+    if (!f) return;
+    if (!/^image\/(png|jpe?g|webp|gif)$/.test(f.type)) {
+      setError("Só aceito PNG, JPG, WEBP ou GIF 🦫");
+      return;
+    }
+    if (f.size > 5 * 1024 * 1024) {
+      setError("Foto muito grande — o limite é 5MB.");
+      return;
+    }
+    setPendingImage(f);
+    setImagePreview(URL.createObjectURL(f));
+  }
+
+  /** Sobe a foto e cria a mensagem. */
+  async function handleSendImage() {
+    if (!pendingImage) return;
+    setUploadingImage(true);
+    setError(null);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const ext = pendingImage.name.split(".").pop()?.toLowerCase() || "png";
+      const path = `${convoId}/${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("images")
+        .upload(path, pendingImage, { contentType: pendingImage.type });
+      if (upErr) throw upErr;
+      const msg = await sendImageMessage(convoId, path);
+      mergeMessage(msg);
+      setPendingImage(null);
+      setImagePreview(null);
+      requestAnimationFrame(() => scrollToBottom());
+    } catch {
+      setError("Falha ao enviar a foto 🦫 tenta de novo.");
+    } finally {
+      setUploadingImage(false);
+    }
+  }
 
   /** Adiciona mensagem se ainda não existir (id é único). */
   function mergeMessage(m: Message) {
@@ -398,19 +447,68 @@ export default function ChatRoom() {
           </div>
         ) : (
           <>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              rows={1}
-              placeholder="Mensagem"
-              className="capy-input max-h-32 flex-1 resize-none py-3"
+            {imagePreview && pendingImage ? (
+              <div className="flex flex-1 items-center gap-2 rounded-2xl bg-white px-3 py-2 shadow-sm ring-1 ring-capy-fur/20">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imagePreview}
+                  alt="preview"
+                  className="h-16 w-16 rounded-lg object-cover"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs text-capy-dark/60">
+                    {pendingImage.name}
+                  </p>
+                  <div className="mt-1 flex gap-2">
+                    <button
+                      onClick={handleSendImage}
+                      disabled={uploadingImage}
+                      className="rounded-full bg-capy-green px-3 py-1 text-xs font-bold text-white disabled:opacity-60"
+                    >
+                      {uploadingImage ? "Enviando…" : "Enviar 📷"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPendingImage(null);
+                        setImagePreview(null);
+                      }}
+                      className="rounded-full bg-capy-fur/15 px-3 py-1 text-xs font-bold text-capy-dark"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                rows={1}
+                placeholder="Mensagem"
+                className="capy-input max-h-32 flex-1 resize-none py-3"
+              />
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
             />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-full bg-capy-fur/15 p-3.5 text-capy-dark transition hover:bg-capy-fur/25"
+              aria-label="Enviar imagem"
+              title="Enviar imagem"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+            </button>
             {text.trim() === "" ? (
               <button
                 onClick={startRecording}
@@ -521,6 +619,8 @@ function MessageBubble({
               <p className="text-sm italic text-capy-dark/50">
                 🚫 Esta mensagem foi apagada
               </p>
+            ) : m.kind === "image" && m.image_url ? (
+              <ImageBubble path={m.image_url} />
             ) : m.kind === "audio" && m.audio_url ? (
               <AudioBubble path={m.audio_url} duration={m.audio_duration} />
             ) : (
@@ -573,6 +673,38 @@ function MessageBubble({
         </div>
       </div>
     </>
+  );
+}
+
+function ImageBubble({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const u = await getSignedImageUrl(path);
+      if (alive) setUrl(u);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+
+  if (!url) {
+    return (
+      <div className="flex h-40 w-40 items-center justify-center rounded-lg bg-capy-fur/10">
+        <span className="h-3 w-3 animate-pulse rounded-full bg-capy-green" />
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt="imagem"
+      loading="lazy"
+      className="max-h-72 w-auto max-w-full rounded-lg object-contain"
+    />
   );
 }
 

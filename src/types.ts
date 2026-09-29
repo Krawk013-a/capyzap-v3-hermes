@@ -26,10 +26,11 @@ export type Message = {
   id: string;
   conversation_id: string;
   sender_id: string;
-  kind: "text" | "audio" | "system";
+  kind: "text" | "audio" | "image" | "system";
   body: string | null;
   audio_url: string | null;
   audio_duration: number | null;
+  image_url: string | null;
   reply_to_id: string | null;
   deleted: boolean;
   created_at: string;

@@ -16,6 +16,7 @@ import {
 import { fmtChatStamp, sanitizeSearch } from "@/lib/format";
 import { useToast } from "@/components/Toast";
 import Avatar from "@/components/Avatar";
+import { registerPush, pushPermission } from "@/lib/push";
 import type { ChatListItem, Profile } from "@/types";
 
 /**
@@ -46,6 +47,8 @@ export default function ChatSidebar() {
   const [groupSearch, setGroupSearch] = useState("");
   const [groupFound, setGroupFound] = useState<Profile[]>([]);
   const [busy, setBusy] = useState(false);
+  const [pushState, setPushState] = useState<string | null>(null); // null=carregando
+  const [pushWorking, setPushWorking] = useState(false);
   const chatsRef = useRef<ChatListItem[]>([]);
   chatsRef.current = chats;
   const pollTimer = useRef<number | null>(null);
@@ -106,13 +109,23 @@ export default function ChatSidebar() {
               const sender = chat.participants.find((p) => p.id === m.sender_id);
               pushToast({
                 title: `${chat.conversation.name ?? "Grupo"} • ${sender?.first_name ?? "Alguém"}`,
-                body: m.kind === "audio" ? "🎤 Áudio" : (m.body ?? "").slice(0, 90),
+                body:
+                  m.kind === "audio"
+                    ? "🎤 Áudio"
+                    : m.kind === "image"
+                    ? "📷 Foto"
+                    : (m.body ?? "").slice(0, 90),
                 avatar: sender?.avatar_url ?? null,
               });
             } else {
               pushToast({
                 title: `${chat.otherUser?.first_name ?? "Alguém"} ${chat.otherUser?.last_name ?? ""}`,
-                body: m.kind === "audio" ? "🎤 Áudio" : (m.body ?? "").slice(0, 90),
+                body:
+                  m.kind === "audio"
+                    ? "🎤 Áudio"
+                    : m.kind === "image"
+                    ? "📷 Foto"
+                    : (m.body ?? "").slice(0, 90),
                 avatar: chat.otherUser?.avatar_url ?? null,
               });
             }
@@ -130,6 +143,27 @@ export default function ChatSidebar() {
       }
     };
   }, [refresh, router, pushToast]);
+
+  // estado do push ao carregar (só mostra o card se não estiver ativo)
+  useEffect(() => {
+    const perm = pushPermission();
+    setPushState(perm);
+  }, []);
+
+  async function handleEnablePush() {
+    setPushWorking(true);
+    try {
+      const result = await registerPush();
+      setPushState(result === "ok" ? "granted" : result);
+      if (result === "ok") {
+        pushToast({ title: "Notificações ativadas! 🔔", body: "Agora você é avisada de mensagens novas." });
+      } else if (result === "denied") {
+        pushToast({ title: "Notificação bloqueada 😕", body: "Libera nas configurações do navegador." });
+      }
+    } finally {
+      setPushWorking(false);
+    }
+  }
 
   // debounce da busca de pessoas
   useEffect(() => {
@@ -292,6 +326,8 @@ export default function ChatSidebar() {
                   ? "🚫 mensagem apagada"
                   : c.lastMessage.kind === "audio"
                   ? "🎤 Áudio"
+                  : c.lastMessage.kind === "image"
+                  ? "📷 Foto"
                   : c.lastMessage.kind === "system"
                   ? c.lastMessage.body ?? ""
                   : (c.lastMessage.body ?? "").slice(0, 60)
@@ -336,6 +372,25 @@ export default function ChatSidebar() {
           )}
         </div>
       )}
+
+      {/* card: ativar notificações push */}
+      {pushState !== null &&
+        pushState !== "granted" &&
+        pushState !== "unsupported" &&
+        pushState !== "no-vapid-key" && (
+          <div className="border-t border-capy-fur/10 bg-capy-bubble/50 px-4 py-3">
+            <p className="text-xs font-semibold text-capy-deep">
+              🔔 Quer ser avisada de mensagens novas?
+            </p>
+            <button
+              onClick={handleEnablePush}
+              disabled={pushWorking}
+              className="mt-2 w-full rounded-lg bg-capy-green px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
+            >
+              {pushWorking ? "Ativando…" : "Ativar notificações"}
+            </button>
+          </div>
+        )}
 
       {/* rodapé: sair */}
       <footer className="border-t border-capy-fur/10 px-4 py-2">
