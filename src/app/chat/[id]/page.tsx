@@ -258,12 +258,12 @@ export default function ChatRoom() {
     : "…";
 
   return (
-    <main className="flex h-dvh w-full flex-col bg-capy-sand">
+    <section className="flex h-full w-full min-w-0 flex-col bg-capy-sand">
       {/* header */}
       <header className="flex items-center gap-3 bg-capy-dark px-3 py-2.5 text-white shadow-md">
         <button
           onClick={() => router.push("/chat")}
-          className="rounded-lg p-1.5 hover:bg-white/10"
+          className="rounded-lg p-1.5 hover:bg-white/10 md:hidden"
           aria-label="Voltar"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
@@ -395,7 +395,7 @@ export default function ChatRoom() {
           </>
         )}
       </footer>
-    </main>
+    </section>
   );
 }
 
