@@ -15,6 +15,7 @@ import {
   getSignedImageUrl,
 } from "@/lib/data";
 import { fmtTime, fmtDayDivider, fmtDuration, pickRecorderMime, audioExtForMime } from "@/lib/format";
+import { playPlim, showLocalNotification } from "@/lib/sound";
 import Avatar from "@/components/Avatar";
 import type { Message, Profile } from "@/types";
 
@@ -134,7 +135,21 @@ export default function ChatRoom() {
           let latest = lastStampRef.current;
           for (const m of data as Message[]) {
             mergeMessage(m);
-            if (m.sender_id !== user.id) markConversationRead(convoId);
+            if (m.sender_id !== user.id) {
+              markConversationRead(convoId);
+              if (document.hidden) {
+                void playPlim();
+                void showLocalNotification(
+                  "CapyZap — nova mensagem",
+                  m.kind === "audio"
+                    ? "🎤 Áudio"
+                    : m.kind === "image"
+                    ? "📷 Foto"
+                    : (m.body ?? "").slice(0, 120),
+                  `/chat/${convoId}`
+                );
+              }
+            }
             const t = new Date(m.created_at).toISOString();
             if (t > latest) latest = t;
           }
@@ -155,6 +170,20 @@ export default function ChatRoom() {
             if (t > lastStampRef.current) lastStampRef.current = t;
             if (m.sender_id !== user.id) {
               markConversationRead(convoId);
+              // plim + notificação do sistema (só se a aba não está visível)
+              if (document.hidden) {
+                void playPlim();
+                const title = info?.is_group
+                  ? `${info.name ?? "Grupo"} • nova mensagem`
+                  : `${info?.other?.first_name ?? "Alguém"} te mandou mensagem`;
+                const body =
+                  m.kind === "audio"
+                    ? "🎤 Áudio"
+                    : m.kind === "image"
+                    ? "📷 Foto"
+                    : (m.body ?? "").slice(0, 120);
+                void showLocalNotification(title, body, `/chat/${convoId}`);
+              }
             }
             requestAnimationFrame(() => scrollToBottom());
           }

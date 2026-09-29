@@ -1,11 +1,12 @@
 // CapyZap Service Worker v2 — cache + notificações push
-const CACHE = "capyzap-v2";
+const CACHE = "capyzap-v3";
 const ASSETS = [
   "/icons/capy.svg",
   "/icons/capy-192.png",
   "/icons/capy-512.png",
   "/icons/capy-maskable-512.png",
   "/manifest.json",
+  "/sounds/plim.wav",
 ];
 
 self.addEventListener("install", (event) => {
@@ -44,7 +45,9 @@ self.addEventListener("fetch", (event) => {
       .then((response) => {
         if (
           response.ok &&
-          (url.pathname.startsWith("/icons/") || url.pathname === "/manifest.json")
+          (url.pathname.startsWith("/icons/") ||
+            url.pathname.startsWith("/sounds/") ||
+            url.pathname === "/manifest.json")
         ) {
           const copy = response.clone();
           caches.open(CACHE).then((cache) => cache.put(event.request, copy));

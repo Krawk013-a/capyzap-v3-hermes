@@ -17,6 +17,7 @@ import { fmtChatStamp, sanitizeSearch } from "@/lib/format";
 import { useToast } from "@/components/Toast";
 import Avatar from "@/components/Avatar";
 import { registerPush, isPushActive } from "@/lib/push";
+import { playPlim, primeAudio, showLocalNotification } from "@/lib/sound";
 import type { ChatListItem, Profile } from "@/types";
 
 /**
@@ -105,6 +106,22 @@ export default function ChatSidebar() {
               (c) => c.conversation.id === m.conversation_id
             );
             if (!chat) return;
+            // plim + notificação do sistema (mensagens fora da conversa aberta)
+            void playPlim();
+            const notifyBody =
+              m.kind === "audio"
+                ? "🎤 Áudio"
+                : m.kind === "image"
+                ? "📷 Foto"
+                : (m.body ?? "").slice(0, 120);
+            const notifyTitle = chat.conversation.is_group
+              ? `${chat.conversation.name ?? "Grupo"}`
+              : `${chat.otherUser?.first_name ?? "Alguém"} ${chat.otherUser?.last_name ?? ""}`;
+            void showLocalNotification(
+              `CapyZap — ${notifyTitle}`,
+              notifyBody,
+              `/chat/${m.conversation_id}`
+            );
             if (chat.conversation.is_group) {
               const sender = chat.participants.find((p) => p.id === m.sender_id);
               pushToast({

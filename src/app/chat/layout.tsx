@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { ToastProvider } from "@/components/Toast";
 import ChatSidebar from "@/components/ChatSidebar";
+import { primeAudio } from "@/lib/sound";
 
 /**
  * Layout de 2 colunas (WhatsApp Web style):
@@ -13,6 +15,16 @@ import ChatSidebar from "@/components/ChatSidebar";
 export default function ChatLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const inRoom = pathname !== "/chat";
+
+  // desbloqueia o áudio no primeiro toque/clique (política de autoplay)
+  useEffect(() => {
+    const once = () => {
+      primeAudio();
+      window.removeEventListener("pointerdown", once);
+    };
+    window.addEventListener("pointerdown", once);
+    return () => window.removeEventListener("pointerdown", once);
+  }, []);
 
   return (
     <ToastProvider>
