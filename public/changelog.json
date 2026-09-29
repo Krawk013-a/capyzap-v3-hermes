@@ -1,0 +1,51 @@
+{
+  "updates": [
+    {
+      "version": "1.4.0",
+      "title": "Editar, digitando… e online",
+      "date": "2026-09-29",
+      "items": [
+        "✏️ Editar mensagem enviada (com selo “editada”)",
+        "⌨️ Indicador de “digitando…” em tempo real",
+        "🟢 Online e “visto por último” no topo da conversa"
+      ]
+    },
+    {
+      "version": "1.3.0",
+      "title": "Plim e notificações",
+      "date": "2026-09-29",
+      "items": [
+        "🔔 Som de nova mensagem (plim!)",
+        "📲 Notificação do sistema no Windows, Android e iPhone"
+      ]
+    },
+    {
+      "version": "1.2.0",
+      "title": "Fotos e notificações push",
+      "date": "2026-09-29",
+      "items": [
+        "📷 Enviar imagens (PNG, JPG, WEBP, GIF até 5MB)",
+        "🔔 Notificações push mesmo com o app fechado"
+      ]
+    },
+    {
+      "version": "1.1.0",
+      "title": "Desktop de verdade",
+      "date": "2026-09-29",
+      "items": [
+        "🖥️ Lista de conversas fixa + chat ao lado (estilo WhatsApp Web)",
+        "⚡ Mensagens instantâneas e confiáveis mesmo em internet ruim"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "title": "CapyZap nasceu 🌿",
+      "date": "2026-09-28",
+      "items": [
+        "💬 Conversas em tempo real, grupos e áudio",
+        "🔐 Conta só com e-mail — sem número de telefone",
+        "📲 Instala no celular como app (PWA)"
+      ]
+    }
+  ]
+}

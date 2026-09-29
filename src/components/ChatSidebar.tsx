@@ -18,6 +18,7 @@ import { useToast } from "@/components/Toast";
 import Avatar from "@/components/Avatar";
 import { registerPush, isPushActive } from "@/lib/push";
 import { playPlim, primeAudio, showLocalNotification } from "@/lib/sound";
+import WhatsNew, { useWhatsNewSeen } from "@/components/WhatsNew";
 import type { ChatListItem, Profile } from "@/types";
 
 /**
@@ -50,6 +51,8 @@ export default function ChatSidebar() {
   const [busy, setBusy] = useState(false);
   const [pushState, setPushState] = useState<"checking" | "active" | "inactive" | "denied" | "unsupported" | "no-vapid" | "partial">("checking");
   const [pushWorking, setPushWorking] = useState(false);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [hasUnseen, markSeen] = useWhatsNewSeen();
   const chatsRef = useRef<ChatListItem[]>([]);
   chatsRef.current = chats;
   const pollTimer = useRef<number | null>(null);
@@ -213,6 +216,14 @@ export default function ChatSidebar() {
     }
   }
 
+  // modal de novidades: abre sozinho quando há versão não vista
+  useEffect(() => {
+    if (hasUnseen) {
+      setWhatsNewOpen(true);
+      markSeen(true);
+    }
+  }, [hasUnseen, markSeen]);
+
   // debounce da busca de pessoas
   useEffect(() => {
     const q = sanitizeSearch(search).trim();
@@ -292,6 +303,23 @@ export default function ChatSidebar() {
           </h1>
         </div>
         <div className="flex items-center gap-1">
+          <Link
+            href="/suggestions"
+            title="Sugestões"
+            className="rounded-lg p-2 hover:bg-white/10"
+          >
+            💡
+          </Link>
+          <button
+            onClick={() => setWhatsNewOpen(true)}
+            title="Novidades"
+            className="relative rounded-lg p-2 hover:bg-white/10"
+          >
+            🌟
+            {hasUnseen && (
+              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-capy-accent ring-2 ring-capy-dark" />
+            )}
+          </button>
           <button
             onClick={() => setGroupOpen(true)}
             title="Novo grupo"
@@ -456,6 +484,9 @@ export default function ChatSidebar() {
           Sair da conta ({headerName})
         </button>
       </footer>
+
+      {/* modal: novidades */}
+      {whatsNewOpen && <WhatsNew onClose={() => setWhatsNewOpen(false)} />}
 
       {/* modal: novo grupo */}
       {groupOpen && (
