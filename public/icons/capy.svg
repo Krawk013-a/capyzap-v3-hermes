@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="80%">
+      <stop offset="0%" stop-color="#4CA66E"/>
+      <stop offset="100%" stop-color="#244E37"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- orelhas -->
+  <ellipse cx="160" cy="150" rx="52" ry="58" fill="#684A31"/>
+  <ellipse cx="352" cy="150" rx="52" ry="58" fill="#684A31"/>
+  <ellipse cx="160" cy="150" rx="26" ry="32" fill="#563A26"/>
+  <ellipse cx="352" cy="150" rx="26" ry="32" fill="#563A26"/>
+  <!-- cabeça -->
+  <ellipse cx="256" cy="266" rx="174" ry="154" fill="#8D6748"/>
+  <!-- focinho -->
+  <ellipse cx="256" cy="330" rx="90" ry="84" fill="#C4966A"/>
+  <!-- narinas -->
+  <ellipse cx="222" cy="308" rx="12" ry="16" fill="#3C2A1C"/>
+  <ellipse cx="290" cy="308" rx="12" ry="16" fill="#3C2A1C"/>
+  <!-- olhos -->
+  <circle cx="183" cy="222" r="18" fill="#281E16"/>
+  <circle cx="329" cy="222" r="18" fill="#281E16"/>
+  <circle cx="177" cy="215" r="6" fill="#FFFFFF"/>
+  <circle cx="323" cy="215" r="6" fill="#FFFFFF"/>
+  <!-- sorriso -->
+  <path d="M226 366 Q256 382 286 366" stroke="#5A3C28" stroke-width="10"
+        fill="none" stroke-linecap="round"/>
+</svg>
