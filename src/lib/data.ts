@@ -169,6 +169,25 @@ export async function sendImageMessage(
   return data as Message;
 }
 
+/** Edita o texto da própria mensagem (só o autor pode — RLS garante). */
+export async function editMessage(messageId: string, newBody: string) {
+  const { error } = await sb()
+    .from("messages")
+    .update({ body: newBody, edited_at: new Date().toISOString() })
+    .eq("id", messageId);
+  if (error) throw error;
+}
+
+/** Heartbeat de "online" (atualiza last_seen_at do próprio perfil). */
+export async function heartbeatSeen() {
+  const { data: { user } } = await sb().auth.getUser();
+  if (!user) return;
+  await sb()
+    .from("profiles")
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq("id", user.id);
+}
+
 /** URL assinada da imagem (bucket privado). */
 export async function getSignedImageUrl(path: string): Promise<string> {
   const { data } = await sb()

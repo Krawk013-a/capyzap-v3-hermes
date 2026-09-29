@@ -18,6 +18,7 @@ create table if not exists public.profiles (
   last_name text not null default '',
   handle text unique,                      -- ex.: @maria (único, opcional)
   avatar_url text,
+  last_seen_at timestamptz not null default now(), -- "visto por último"
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -52,6 +53,7 @@ create table if not exists public.messages (
   audio_duration numeric,                  -- segundos
   reply_to_id uuid references public.messages(id) on delete set null,
   deleted boolean not null default false, -- "apagar para todos"
+  edited_at timestamptz,               -- preenchido quando editada
   created_at timestamptz not null default now()
 );
 

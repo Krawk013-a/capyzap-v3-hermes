@@ -33,6 +33,7 @@ export type Message = {
   image_url: string | null;
   reply_to_id: string | null;
   deleted: boolean;
+  edited_at: string | null;
   created_at: string;
   sender?: Profile | null;
   reply_to?: { id: string; body: string | null; kind: string; sender_name: string } | null;

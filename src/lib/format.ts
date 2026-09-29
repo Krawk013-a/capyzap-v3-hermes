@@ -65,3 +65,19 @@ export function audioExtForMime(mime: string): string {
 export function sanitizeSearch(q: string): string {
   return q.replace(/[%,*()]/g, "");
 }
+
+/** "online" / "hoje às 14:32" / "ontem" / data — p/ o header do chat. */
+export function fmtLastSeen(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMin = (now.getTime() - d.getTime()) / 60000;
+  if (diffMin < 2) return "online";
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) return `visto por último hoje às ${fmtTime(iso)}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString())
+    return `visto por último ontem às ${fmtTime(iso)}`;
+  return `visto por último ${d.toLocaleDateString("pt-BR")} às ${fmtTime(iso)}`;
+}

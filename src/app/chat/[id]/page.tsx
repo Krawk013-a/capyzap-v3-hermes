@@ -13,8 +13,10 @@ import {
   sendImageMessage,
   getSignedAudioUrl,
   getSignedImageUrl,
+  editMessage,
+  heartbeatSeen,
 } from "@/lib/data";
-import { fmtTime, fmtDayDivider, fmtDuration, pickRecorderMime, audioExtForMime } from "@/lib/format";
+import { fmtTime, fmtDayDivider, fmtDuration, fmtLastSeen, pickRecorderMime, audioExtForMime } from "@/lib/format";
 import { playPlim, showLocalNotification } from "@/lib/sound";
 import Avatar from "@/components/Avatar";
 import type { Message, Profile } from "@/types";
@@ -45,7 +47,13 @@ export default function ChatRoom() {
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [otherTyping, setOtherTyping] = useState<string | null>(null); // nome de quem digita
+  const [otherSeen, setOtherSeen] = useState<string | null>(null); // last_seen do outro
+  const [editingMsg, setEditingMsg] = useState<Message | null>(null);
+  const [editDraft, setEditDraft] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimerRef = useRef<number | null>(null);
+  const lastTypingSentRef = useRef(0);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const recRef = useRef<{ rec: MediaRecorder; chunks: Blob[]; timer: number } | null>(null);
@@ -121,6 +129,88 @@ export default function ChatRoom() {
 
       // realtime da conversa (channel guardado p/ cleanup síncrono)
       if (cancelled) return; // componente desmontou enquanto carregava
+      // === PRESENCE: "digitando…" + online/último visto ===
+      const room = supabase.channel(`capy-presence-${convoId}`, {
+        config: { presence: { key: user.id } },
+      });
+
+      room
+        .on("presence", { event: "sync" }, () => {
+          const state = room.presenceState() as Record<string, unknown[]>;
+          const others = Object.keys(state).filter((k) => k !== user.id);
+          if (others.length > 0) {
+            // alguém do outro lado está na sala — mostra "online"
+            const other = others[0];
+            // pega last_seen real do perfil (pra quando sair, mostrar "visto às...")
+            void supabase
+              .from("profiles")
+              .select("first_name, last_seen_at")
+              .eq("id", other)
+              .single()
+              .then(({ data }) => {
+                if (data) setOtherSeen(data.last_seen_at);
+              });
+          }
+        })
+        .on("presence", { event: "join" }, ({ key }) => {
+          if (key !== user.id) setOtherSeen("ONLINE");
+        })
+        .on("presence", { event: "leave" }, ({ key }) => {
+          if (key !== user.id) {
+            // saiu — atualiza o last_seen (heartbeat dele deixou fresco)
+            void supabase
+              .from("profiles")
+              .select("last_seen_at")
+              .eq("id", key)
+              .single()
+              .then(({ data }) => {
+                if (data) setOtherSeen(data.last_seen_at);
+              });
+            setOtherTyping(null);
+          }
+        })
+        // broadcast: digitando…
+        .on("broadcast", { event: "typing" }, (payload) => {
+          const d = payload as unknown as { user_id: string; name: string; typing: boolean };
+          if (d.user_id === user.id) return;
+          setOtherTyping(d.typing ? d.name : null);
+          if (d.typing) {
+            // apaga o "digitando" sozinho após 4s sem novo sinal
+            if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
+            typingTimerRef.current = window.setTimeout(() => setOtherTyping(null), 4000);
+          }
+        })
+        .subscribe(async (status) => {
+          if (status === "SUBSCRIBED") {
+            await room.track({ online_at: new Date().toISOString() });
+            await heartbeatSeen();
+          }
+        });
+
+      // heartbeat de last_seen a cada 60s enquanto a sala está aberta
+      const hbTimer = window.setInterval(() => {
+        void heartbeatSeen();
+      }, 60000);
+
+      // mensagem EDITADA por alguém → atualiza na tela
+      const chUpd = supabase
+        .channel(`capy-edits-${convoId}`)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "messages", filter: `conversation_id=eq.${convoId}` },
+          (payload) => {
+            const m = payload.new as Message;
+            setMessages((prev) =>
+              prev.map((x) =>
+                x.id === m.id
+                  ? { ...x, body: m.body, edited_at: m.edited_at, deleted: m.deleted }
+                  : x
+              )
+            );
+          }
+        )
+        .subscribe();
+
       // POLLING de backup (rede de escola mata websocket com frequência):
       // a cada 8s puxa o que vier depois da última mensagem conhecida.
       pollTimer.current = window.setInterval(async () => {
@@ -207,9 +297,12 @@ export default function ChatRoom() {
 
     return () => {
       cancelled = true;
+      const supa = getSupabaseBrowserClient();
       const ch = channelRef.current;
-      if (ch) getSupabaseBrowserClient().removeChannel(ch);
+      if (ch) supa.removeChannel(ch);
       channelRef.current = null;
+      supa.removeChannel(supa.channel(`capy-presence-${convoId}`));
+      supa.removeChannel(supa.channel(`capy-edits-${convoId}`));
       if (pollTimer.current) {
         window.clearInterval(pollTimer.current);
         pollTimer.current = null;
@@ -281,6 +374,23 @@ export default function ChatRoom() {
     setMessages((prev) =>
       prev.some((x) => x.id === m.id) ? prev : [...prev, m]
     );
+  }
+
+  /** Emite "digitando…" no máximo a cada 2s enquanto digita. */
+  function emitTyping() {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 2000) return;
+    lastTypingSentRef.current = now;
+    const supabase = getSupabaseBrowserClient();
+    void supabase.channel(`capy-presence-${convoId}`).send({
+      type: "broadcast",
+      event: "typing",
+      payload: {
+        user_id: me?.id ?? "",
+        name: me?.first_name ?? "Alguém",
+        typing: true,
+      },
+    });
   }
 
   async function handleSend() {
@@ -369,6 +479,24 @@ export default function ChatRoom() {
     recRef.current = null;
   }
 
+  async function handleSaveEdit() {
+    if (!editingMsg) return;
+    const body = editDraft.trim();
+    if (!body) return;
+    try {
+      await editMessage(editingMsg.id, body);
+      setMessages((prev) =>
+        prev.map((x) =>
+          x.id === editingMsg.id ? { ...x, body, edited_at: new Date().toISOString() } : x
+        )
+      );
+      setEditingMsg(null);
+      setEditDraft("");
+    } catch {
+      setError("Não consegui salvar a edição 🦫");
+    }
+  }
+
   async function handleDelete(m: Message) {
     const supabase = getSupabaseBrowserClient();
     await supabase
@@ -406,9 +534,19 @@ export default function ChatRoom() {
         />
         <div className="min-w-0 flex-1">
           <p className="truncate font-bold">{title}</p>
-          {info?.is_group && (
+          {info?.is_group ? (
             <p className="truncate text-xs text-white/60">
-              {info.members.length} {info.members.length === 1 ? "membro" : "membros"}
+              {otherTyping
+                ? `${otherTyping} está digitando…`
+                : `${info.members.length} ${info.members.length === 1 ? "membro" : "membros"}`}
+            </p>
+          ) : (
+            <p className="truncate text-xs text-white/60">
+              {otherTyping
+                ? "digitando…"
+                : otherSeen === "ONLINE"
+                ? "online"
+                : fmtLastSeen(otherSeen)}
             </p>
           )}
         </div>
@@ -438,6 +576,10 @@ export default function ChatRoom() {
                     : null
                 }
                 onReply={() => setReplyTo(m)}
+                onEdit={() => {
+                  setEditingMsg(m);
+                  setEditDraft(m.body ?? "");
+                }}
                 onDelete={() => handleDelete(m)}
               />
             ))}
@@ -445,6 +587,45 @@ export default function ChatRoom() {
           </div>
         )}
       </section>
+
+      {/* editor de mensagem */}
+      {editingMsg && (
+        <div className="flex items-center gap-2 border-t border-capy-fur/15 bg-capy-sanddark/60 px-4 py-2">
+          <span className="text-xs">✏️</span>
+          <input
+            value={editDraft}
+            onChange={(e) => setEditDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleSaveEdit();
+              }
+              if (e.key === "Escape") {
+                setEditingMsg(null);
+                setEditDraft("");
+              }
+            }}
+            autoFocus
+            className="capy-input flex-1 py-2 text-sm"
+            placeholder="Editar mensagem…"
+          />
+          <button
+            onClick={() => void handleSaveEdit()}
+            className="rounded-full bg-capy-green px-3 py-1.5 text-xs font-bold text-white"
+          >
+            Salvar
+          </button>
+          <button
+            onClick={() => {
+              setEditingMsg(null);
+              setEditDraft("");
+            }}
+            className="rounded-full bg-capy-fur/15 px-3 py-1.5 text-xs font-bold text-capy-dark"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
 
       {/* resposta ativa */}
       {replyTo && (
@@ -527,7 +708,10 @@ export default function ChatRoom() {
             ) : (
               <textarea
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  emitTyping();
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -607,6 +791,7 @@ function MessageBubble({
   replyBody,
   senderName,
   onReply,
+  onEdit,
   onDelete,
 }: {
   m: Message;
@@ -616,6 +801,7 @@ function MessageBubble({
   replyBody: string | null;
   senderName: string | null;
   onReply: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -674,8 +860,9 @@ function MessageBubble({
               </p>
             )}
 
-            {/* hora + ticks */}
+            {/* hora + editada + ticks */}
             <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-capy-dark/50">
+              {m.edited_at && !m.deleted && <span className="italic">editada</span>}
               <span>{fmtTime(m.created_at)}</span>
               {mine && !m.deleted && <Ticks read={read} />}
             </div>
@@ -702,6 +889,17 @@ function MessageBubble({
               >
                 ↩️ Responder
               </button>
+              {mine && m.kind === "text" && !m.deleted && (
+                <button
+                  onClick={() => {
+                    onEdit();
+                    setMenuOpen(false);
+                  }}
+                  className="block w-full px-3 py-2 text-left hover:bg-capy-bubble/50"
+                >
+                  ✏️ Editar
+                </button>
+              )}
               {mine && (
                 <button
                   onClick={() => {
