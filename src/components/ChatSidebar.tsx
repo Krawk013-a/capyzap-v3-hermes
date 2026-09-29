@@ -48,6 +48,7 @@ export default function ChatSidebar() {
   const [busy, setBusy] = useState(false);
   const chatsRef = useRef<ChatListItem[]>([]);
   chatsRef.current = chats;
+  const pollTimer = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await fetchChatList();
@@ -72,6 +73,12 @@ export default function ChatSidebar() {
       setMe(await getMyProfile());
       await refresh();
       if (disposed) return;
+
+      // POLLING leve de fallback: se o websocket cair (rede de escola),
+      // a lista continua atualizando a cada 12s.
+      pollTimer.current = window.setInterval(async () => {
+        if (!document.hidden) await refresh();
+      }, 12000);
 
       // Realtime: nova mensagem em qualquer conversa → atualiza lista + toast
       channel = supabase
@@ -117,6 +124,10 @@ export default function ChatSidebar() {
     return () => {
       disposed = true;
       if (channel) getSupabaseBrowserClient().removeChannel(channel);
+      if (pollTimer.current) {
+        window.clearInterval(pollTimer.current);
+        pollTimer.current = null;
+      }
     };
   }, [refresh, router, pushToast]);
 

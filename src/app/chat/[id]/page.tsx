@@ -9,6 +9,7 @@ import {
   getMyProfile,
   markConversationRead,
   sendTextMessage,
+  sendAudioMessage,
   getSignedAudioUrl,
 } from "@/lib/data";
 import { fmtTime, fmtDayDivider, fmtDuration, pickRecorderMime, audioExtForMime } from "@/lib/format";
@@ -43,6 +44,8 @@ export default function ChatRoom() {
   const recRef = useRef<{ rec: MediaRecorder; chunks: Blob[]; timer: number } | null>(null);
   const lastReadOkRef = useRef<string>("");
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const pollTimer = useRef<number | null>(null);
+  const lastStampRef = useRef<string>("");
 
   const scrollToBottom = useCallback((smooth = true) => {
     bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
@@ -98,6 +101,11 @@ export default function ChatRoom() {
       const initial = await fetchMessages(convoId);
       if (cancelled) return;
       setMessages(initial);
+      if (initial.length > 0) {
+        lastStampRef.current = new Date(
+          initial[initial.length - 1].created_at
+        ).toISOString();
+      }
       setLoading(false);
       requestAnimationFrame(() => scrollToBottom(false));
 
@@ -106,6 +114,29 @@ export default function ChatRoom() {
 
       // realtime da conversa (channel guardado p/ cleanup síncrono)
       if (cancelled) return; // componente desmontou enquanto carregava
+      // POLLING de backup (rede de escola mata websocket com frequência):
+      // a cada 8s puxa o que vier depois da última mensagem conhecida.
+      pollTimer.current = window.setInterval(async () => {
+        const { data } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", convoId)
+          .gt("created_at", lastStampRef.current)
+          .order("created_at", { ascending: true })
+          .limit(50);
+        if (data && data.length > 0) {
+          let latest = lastStampRef.current;
+          for (const m of data as Message[]) {
+            mergeMessage(m);
+            if (m.sender_id !== user.id) markConversationRead(convoId);
+            const t = new Date(m.created_at).toISOString();
+            if (t > latest) latest = t;
+          }
+          lastStampRef.current = latest;
+          requestAnimationFrame(() => scrollToBottom());
+        }
+      }, 8000);
+
       const ch = supabase
         .channel(`capy-room-${convoId}`)
         .on(
@@ -113,9 +144,9 @@ export default function ChatRoom() {
           { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convoId}` },
           (payload) => {
             const m = payload.new as Message;
-            setMessages((prev) =>
-              prev.some((x) => x.id === m.id) ? prev : [...prev, m]
-            );
+            mergeMessage(m); // dedupe: a otimista (mesmo id) não duplica
+            const t = new Date(m.created_at).toISOString();
+            if (t > lastStampRef.current) lastStampRef.current = t;
             if (m.sender_id !== user.id) {
               markConversationRead(convoId);
             }
@@ -144,8 +175,19 @@ export default function ChatRoom() {
       const ch = channelRef.current;
       if (ch) getSupabaseBrowserClient().removeChannel(ch);
       channelRef.current = null;
+      if (pollTimer.current) {
+        window.clearInterval(pollTimer.current);
+        pollTimer.current = null;
+      }
     };
   }, [convoId, router, scrollToBottom]);
+
+  /** Adiciona mensagem se ainda não existir (id é único). */
+  function mergeMessage(m: Message) {
+    setMessages((prev) =>
+      prev.some((x) => x.id === m.id) ? prev : [...prev, m]
+    );
+  }
 
   async function handleSend() {
     const body = text.trim();
@@ -153,10 +195,10 @@ export default function ChatRoom() {
     setSending(true);
     setError(null);
     try {
-      await sendTextMessage(convoId, body, replyTo?.id ?? null);
+      const msg = await sendTextMessage(convoId, body, replyTo?.id ?? null);
+      mergeMessage(msg); // aparece na hora, independente do Realtime
       setText("");
       setReplyTo(null);
-      // otimista: realtime entrega, mas garantimos scroll
       requestAnimationFrame(() => scrollToBottom());
     } catch {
       setError("Falha no envio — a internet da escola falhou? Tenta de novo 🦫");
@@ -202,18 +244,13 @@ export default function ChatRoom() {
       setError("Falha ao subir o áudio 🦫 tenta de novo.");
       return;
     }
-    const { error: msgErr } = await supabase.from("messages").insert({
-      conversation_id: convoId,
-      sender_id: (await supabase.auth.getUser()).data.user!.id,
-      kind: "audio",
-      audio_url: path,
-      audio_duration: recSecondsRef.current,
-    });
-    if (msgErr) {
+    try {
+      const msg = await sendAudioMessage(convoId, path, recSecondsRef.current);
+      mergeMessage(msg); // aparece na hora
+      requestAnimationFrame(() => scrollToBottom());
+    } catch {
       setError("Falha ao enviar áudio 🦫");
-      return;
     }
-    requestAnimationFrame(() => scrollToBottom());
   }
 
   const recSecondsRef = useRef(0);
