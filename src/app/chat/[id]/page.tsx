@@ -18,6 +18,12 @@ import {
 } from "@/lib/data";
 import { fmtTime, fmtDayDivider, fmtDuration, fmtLastSeen, pickRecorderMime, audioExtForMime } from "@/lib/format";
 import { playPlim, showLocalNotification } from "@/lib/sound";
+import {
+  type PendingMessage,
+  getPending,
+  enqueuePending,
+  flushOutbox,
+} from "@/lib/offlineQueue";
 import Avatar from "@/components/Avatar";
 import type { Message, Profile } from "@/types";
 
@@ -48,6 +54,8 @@ export default function ChatRoom() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [otherTyping, setOtherTyping] = useState<string | null>(null); // nome de quem digita
+  const [pendingMsgs, setPendingMsgs] = useState<PendingMessage[]>([]);
+  const [offlineMode, setOfflineMode] = useState(false);
   const [otherSeen, setOtherSeen] = useState<string | null>(null); // last_seen do outro
   const [editingMsg, setEditingMsg] = useState<Message | null>(null);
   const [editDraft, setEditDraft] = useState("");
@@ -76,6 +84,54 @@ export default function ChatRoom() {
   const scrollToBottom = useCallback((smooth = true) => {
     bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
   }, []);
+
+  const refreshPending = useCallback(() => {
+    setPendingMsgs(getPending(convoId));
+  }, [convoId]);
+
+  // tenta esvaziar a fila; retorna quantas saíram
+  const tryFlush = useCallback(
+    async (silent = true): Promise<number> => {
+      const sent = await flushOutbox(async (p) => {
+        await sendTextMessage(p.conversationId, p.body, p.replyTo);
+      });
+      if (sent > 0) {
+        refreshPending();
+        if (!silent) setError(null);
+      }
+      return sent;
+    },
+    [refreshPending]
+  );
+
+  // reconexão / volta pra aba → esvazia a fila
+  useEffect(() => {
+    setPendingMsgs(getPending(convoId));
+
+    const onOnline = () => {
+      setOfflineMode(false);
+      void tryFlush();
+    };
+    const onOffline = () => setOfflineMode(true);
+    const onVisible = () => {
+      if (!document.hidden) void tryFlush();
+    };
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    document.addEventListener("visibilitychange", onVisible);
+    // tenta a cada 15s caso o evento online não dispare (wifi de escola…)
+    const flushTimer = window.setInterval(() => {
+      if (navigator.onLine) void tryFlush();
+    }, 15000);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.clearInterval(flushTimer);
+    };
+  }, [convoId, tryFlush, refreshPending]);
 
   // carrega tudo
   useEffect(() => {
@@ -418,7 +474,12 @@ export default function ChatRoom() {
       setReplyTo(null);
       requestAnimationFrame(() => scrollToBottom());
     } catch {
-      setError("Falha no envio — a internet da escola falhou? Tenta de novo 🦫");
+      // sem internet → enfileira e mostra com relógio (sai sozinho quando reconectar)
+      const p = enqueuePending(convoId, body, replyTo?.id ?? null);
+      setPendingMsgs((prev) => [...prev, p]);
+      setText("");
+      setReplyTo(null);
+      requestAnimationFrame(() => scrollToBottom());
     } finally {
       setSending(false);
     }
@@ -593,6 +654,15 @@ export default function ChatRoom() {
         </div>
       </header>
 
+      {(offlineMode || pendingMsgs.length > 0) && (
+        <div className="flex items-center justify-center gap-2 bg-capy-accent/15 px-4 py-1.5 text-center text-xs font-medium text-capy-accent">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-capy-accent" />
+          {offlineMode
+            ? "Sem internet — as mensagens saem quando a conexão voltar"
+            : `${pendingMsgs.length} ${pendingMsgs.length === 1 ? "mensagem aguardando" : "mensagens aguardando"} internet`}
+        </div>
+      )}
+
       {/* mensagens */}
       <section className="chat-bg nice-scroll relative flex-1 overflow-y-auto px-3 py-4 md:px-8">
         {loading ? (
@@ -601,6 +671,19 @@ export default function ChatRoom() {
           </p>
         ) : (
           <div className="mx-auto flex max-w-2xl flex-col gap-1.5">
+            {pendingMsgs.map((p) => (
+              <div key={p.tempId} className="flex justify-end">
+                <div className="relative max-w-[82%] rounded-2xl rounded-br-md bg-capy-bubble px-3 py-2 opacity-80 shadow-sm md:max-w-md">
+                  <p className="whitespace-pre-wrap break-words text-[15px] text-capy-dark">
+                    {p.body}
+                  </p>
+                  <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-capy-dark/50">
+                    <span>aguardando internet</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  </div>
+                </div>
+              </div>
+            ))}
             {messages.map((m, i) => (
               <MessageBubble
                 key={m.id}
