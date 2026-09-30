@@ -1,6 +1,14 @@
 {
   "updates": [
     {
+      "version": "1.5.3",
+      "title": "Diagnóstico do push turbinado",
+      "date": "2026-09-29",
+      "items": [
+        "📡 O teste do servidor agora explica EM PORTUGUÊS o motivo de cada falha (chaves trocadas, inscrição velha, o que faltar)"
+      ]
+    },
+    {
       "version": "1.5.2",
       "title": "Notificações no perfil",
       "date": "2026-09-29",

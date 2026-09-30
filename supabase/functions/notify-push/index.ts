@@ -37,12 +37,15 @@ function vapidReady(): boolean {
   }
 }
 
+type SendError = { statusCode?: number; message: string };
+
 async function sendTo(
   admin: ReturnType<typeof createClient>,
   subs: any[],
   payload: Record<string, unknown>
-): Promise<{ sent: number; failed: number; deadEndpoints: string[] }> {
+): Promise<{ sent: number; failed: number; errors: SendError[]; deadEndpoints: string[] }> {
   const dead: string[] = [];
+  const errors: SendError[] = [];
   let sent = 0;
   let failed = 0;
   await Promise.allSettled(
@@ -55,6 +58,10 @@ async function sendTo(
         sent += 1;
       } catch (err: any) {
         failed += 1;
+        errors.push({
+          statusCode: err?.statusCode,
+          message: String(err?.body ?? err?.message ?? "unknown").slice(0, 200),
+        });
         const code = err?.statusCode;
         if (code === 404 || code === 410) dead.push(s.endpoint);
       }
@@ -63,7 +70,7 @@ async function sendTo(
   for (const e of dead) {
     await admin.from("push_subscriptions").delete().eq("endpoint", e);
   }
-  return { sent, failed, deadEndpoints: dead };
+  return { sent, failed, errors, deadEndpoints: dead };
 }
 
 Deno.serve(async (req) => {
@@ -106,7 +113,8 @@ Deno.serve(async (req) => {
         url: "/chat",
         tag: "capyzap-test",
       });
-      return json(r);
+      // vapidPubPrefix: p/ o app comparar com a chave que o NAVEGADOR usou
+      return json({ ...r, subs: subs.length, vapidPubPrefix: VAPID_PUBLIC_KEY.slice(0, 16) });
     }
 
     // ============ WEBHOOK (INSERT em messages) ============

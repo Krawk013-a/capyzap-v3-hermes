@@ -88,18 +88,37 @@ export default function PushFixPage() {
       });
       const data = (await res.json()) as Record<string, unknown>;
 
+      // prefixo da chave VAPID que o NAVEGADOR usou ao inscrever
+      const browserVapid = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
+      const serverVapid = typeof data.vapidPubPrefix === "string" ? data.vapidPubPrefix : "";
+      const vapidMismatch =
+        serverVapid && !browserVapid.startsWith(serverVapid);
+
+      const firstErr =
+        Array.isArray(data.errors) && data.errors.length > 0
+          ? (data.errors[0] as { statusCode?: number; message: string })
+          : null;
+
       if (res.status === 401) setResult("Sessão inválida — loga de novo.");
       else if (data.error === "no-subscriptions")
         setResult("Nenhum device inscrito no servidor. Clica em \"Forçar ativação\" primeiro 🦫");
       else if (data.error === "vapid-missing")
         setResult("Faltam os secrets VAPID na Edge Function. No terminal: supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... 🦫");
-      else if (typeof data.sent === "number")
+      else if (vapidMismatch)
         setResult(
-          data.sent > 0
-            ? `✅ Servidor OK! ${data.sent} push enviado(s) — chegou a notificação? (app pode estar fechado!)`
-            : "Servidor respondeu mas nada chegou. Roda: supabase functions deploy notify-push"
+          "🔑 AS CHAVES NÃO BATEM: a VAPID do navegador é diferente da que está nos secrets do servidor. Roda de novo (uma linha só): supabase secrets set VAPID_PRIVATE_KEY=vqNcbJWWCDKxMdrZB0fPTybYkFfYWN1Mrm4lGx_bRSg VAPID_PUBLIC_KEY=BC6Q6RPb3-jfz7uk9mQOMuvPpsDPwgIb24d_1BxXLyAzoUSYyGkxA_h8QZwvoMrISchKYk5sg_SCtzOXe1sEczY VAPID_SUBJECT=mailto:enzosilva0880@gmail.com — depois \"Forçar ativação\" de novo 🦫"
         );
-      else setResult("Resposta inesperada: " + JSON.stringify(data));
+      else if (typeof data.sent === "number" && data.sent > 0)
+        setResult(`✅ Servidor OK! ${data.sent} push enviado(s) — chegou a notificação?`);
+      else if (firstErr?.statusCode === 403 || firstErr?.statusCode === 401)
+        setResult("🔑 Chave VAPID do servidor errada/expirada — roda o supabase secrets set de novo 🦫");
+      else if (firstErr?.statusCode === 410 || firstErr?.statusCode === 404)
+        setResult("Inscrição velha no servidor — clica \"Forçar ativação\" pra re-inscrever 🦫");
+      else if (firstErr?.statusCode === 400)
+        setResult("Inscrição corrompida — clica \"Forçar ativação\" pra re-inscrever 🦫");
+      else if (firstErr)
+        setResult(`Servidor tentou mas falhou (HTTP ${firstErr.statusCode ?? "?"}): ${firstErr.message.slice(0, 120)}`);
+      else setResult("Resposta inesperada: " + JSON.stringify(data).slice(0, 120));
     } catch (e) {
       setResult("Não consegui chamar a função. Ela foi deployada? supabase functions deploy notify-push");
     } finally {
