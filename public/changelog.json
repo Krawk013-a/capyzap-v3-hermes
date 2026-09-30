@@ -1,6 +1,14 @@
 {
   "updates": [
     {
+      "version": "1.5.2",
+      "title": "Notificações no perfil",
+      "date": "2026-09-29",
+      "items": [
+        "⚙️ Configurações de notificação agora ficam no perfil — ativar, ver estado e testar em um lugar só"
+      ]
+    },
+    {
       "version": "1.5.1",
       "title": "Notificações mais rápidas",
       "date": "2026-09-29",

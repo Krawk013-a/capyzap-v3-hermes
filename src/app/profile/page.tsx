@@ -6,6 +6,7 @@ import Link from "next/link";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getMyProfile, signOut } from "@/lib/data";
 import Avatar from "@/components/Avatar";
+import PushSettingsCard from "@/components/PushSettingsCard";
 import type { Profile } from "@/types";
 
 export default function ProfilePage() {
@@ -128,6 +129,9 @@ export default function ProfilePage() {
             {saving ? "Salvando…" : "Salvar foto"}
           </button>
         </div>
+
+        {/* notificações — config fácil aqui embaixo */}
+        <PushSettingsCard />
 
         <div className="mt-6 flex justify-between gap-3">
           <Link href="/chat" className="capy-btn-secondary flex-1 text-center">
