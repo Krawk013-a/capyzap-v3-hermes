@@ -3,31 +3,121 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 
 // ============================================================
-// CapyZap — Database Webhook: notifica push os participantes
-// da conversa quando chega mensagem nova (texto/áudio/imagem).
-// Deploy: supabase functions deploy notify-push
-// Trigger no Dashboard: Database → Webhooks (INSERT em messages)
+// CapyZap — notify-push v2
+// 1) Webhook (INSERT em messages) → push pros participantes
+// 2) MODO TESTE: POST /notify-push?test=1 com Authorization do
+//    usuário logado → push de teste pra TODOS os devices dele.
+//    Usado pela tela /notifications p/ diagnosticar o caminho.
 // ============================================================
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY")!;
-const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY")!;
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
+const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
 const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:capyzap@example.com";
 
-webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, content-type, apikey",
+  "Content-Type": "application/json",
+};
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: CORS });
+
+function vapidReady(): boolean {
+  if (!VAPID_PRIVATE || !VAPID_PUBLIC) return false;
+  try {
+    webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sendTo(
+  admin: ReturnType<typeof createClient>,
+  subs: any[],
+  payload: Record<string, unknown>
+): Promise<{ sent: number; failed: number; deadEndpoints: string[] }> {
+  const dead: string[] = [];
+  let sent = 0;
+  let failed = 0;
+  await Promise.allSettled(
+    subs.map(async (s) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+          JSON.stringify(payload)
+        );
+        sent += 1;
+      } catch (err: any) {
+        failed += 1;
+        const code = err?.statusCode;
+        if (code === 404 || code === 410) dead.push(s.endpoint);
+      }
+    })
+  );
+  for (const e of dead) {
+    await admin.from("push_subscriptions").delete().eq("endpoint", e);
+  }
+  return { sent, failed, deadEndpoints: dead };
+}
 
 Deno.serve(async (req) => {
+  // CORS preflight (o browser manda OPTIONS antes do POST de teste)
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+
   try {
+    const url = new URL(req.url);
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+    // ============ MODO TESTE (?test=1) ============
+    if (url.searchParams.get("test") === "1") {
+      const authHeader = req.headers.get("Authorization") ?? "";
+      if (!authHeader) return json({ error: "missing-token" }, 401);
+
+      const userClient = createClient(SUPABASE_URL, ANON_KEY, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !user) return json({ error: "invalid-session" }, 401);
+
+      const { data: subs } = await admin
+        .from("push_subscriptions")
+        .select("endpoint, p256dh, auth")
+        .eq("user_id", user.id);
+
+      if (!subs || subs.length === 0) {
+        return json({ error: "no-subscriptions" }, 400);
+      }
+      if (!vapidReady()) {
+        return json(
+          { error: "vapid-missing", hint: "supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=..." },
+          500
+        );
+      }
+
+      const r = await sendTo(admin, subs as any[], {
+        title: "CapyZap — teste do servidor 🔔",
+        body: "Se você está vendo isso, o push funciona até com o app fechado!",
+        url: "/chat",
+        tag: "capyzap-test",
+      });
+      return json(r);
+    }
+
+    // ============ WEBHOOK (INSERT em messages) ============
+    if (!vapidReady()) {
+      console.error("[notify-push] VAPID secrets não configurados");
+      return json({ error: "vapid-missing" }, 500);
+    }
+
     const payload = await req.json();
-    // formato do webhook do Supabase: { type, table, record, ... }
     const record = payload.record ?? payload.new ?? payload;
-    const {
-      conversation_id,
-      sender_id,
-      kind,
-      body,
-    } = record as {
+    const { conversation_id, sender_id, kind, body } = record as {
       conversation_id: string;
       sender_id: string;
       kind: string;
@@ -35,102 +125,43 @@ Deno.serve(async (req) => {
     };
 
     if (!conversation_id || kind === "system") {
-      return new Response("ignored", { status: 200 });
+      return json({ ignored: true });
     }
 
-    const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-
-    // 1) participantes da conversa (menos o remetente)
     const { data: parts, error: partsErr } = await admin
       .from("participants")
       .select("user_id")
       .eq("conversation_id", conversation_id)
       .neq("user_id", sender_id);
-    if (partsErr || !parts || parts.length === 0) {
-      return new Response("no recipients", { status: 200 });
-    }
+    if (partsErr || !parts || parts.length === 0) return json({ no_recipients: true });
 
-    // 2) dados da conversa + nome do remetente (p/ título)
-    const { data: convo } = await admin
-      .from("conversations")
-      .select("is_group, name")
-      .eq("id", conversation_id)
-      .single();
-
-    const { data: sender } = await admin
-      .from("profiles")
-      .select("first_name, last_name")
-      .eq("id", sender_id)
-      .single();
+    const [{ data: convo }, { data: sender }] = await Promise.all([
+      admin.from("conversations").select("is_group, name").eq("id", conversation_id).single(),
+      admin.from("profiles").select("first_name, last_name").eq("id", sender_id).single(),
+    ]);
 
     const senderName = sender
       ? `${sender.first_name} ${sender.last_name}`.trim()
       : "Alguém";
+    const title = convo?.is_group ? `${convo.name ?? "Grupo"} • ${senderName}` : senderName;
+    const messageBody =
+      kind === "audio" ? "🎤 Áudio" : kind === "image" ? "📷 Foto" : (body ?? "").slice(0, 120);
 
-    let title: string;
-    let messageBody: string;
-    if (convo?.is_group) {
-      title = `${convo.name ?? "Grupo"} • ${senderName}`;
-    } else {
-      title = senderName;
-    }
-    if (kind === "audio") messageBody = "🎤 Áudio";
-    else if (kind === "image") messageBody = "📷 Foto";
-    else messageBody = (body ?? "").slice(0, 120);
-
-    // 3) inscrições push desses participantes
-    const ids = parts.map((p: any) => p.user_id);
+    const ids = (parts as any[]).map((p) => p.user_id);
     const { data: subs } = await admin
       .from("push_subscriptions")
       .select("endpoint, p256dh, auth")
       .in("user_id", ids);
-    if (!subs || subs.length === 0) {
-      return new Response("no subscriptions", { status: 200 });
-    }
+    if (!subs || subs.length === 0) return json({ no_subscriptions: true });
 
-    // 4) dispara pra cada device (erros individuais não derrubam os demais)
-    const results = await Promise.allSettled(
-      (subs as any[]).map((s) =>
-        webpush.sendNotification(
-          {
-            endpoint: s.endpoint,
-            keys: { p256dh: s.p256dh, auth: s.auth },
-          },
-          JSON.stringify({
-            title,
-            body: messageBody,
-            url: `/chat/${conversation_id}`,
-            tag: conversation_id,
-          })
-        )
-      )
-    );
-
-    // 5) limpa inscrições mortas (410 Gone) — mantenho a tabela saudável
-    const dead = results
-      .map((r, i) => (r.status === "rejected" && subs[i] ? subs[i].endpoint : null))
-      .filter(Boolean) as string[];
-
-    // só remove se de fato for gone/expired (não por falha de rede)
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (r.status === "rejected") {
-        const statusCode = (r.reason as any)?.statusCode;
-        if (statusCode === 404 || statusCode === 410) {
-          await admin
-            .from("push_subscriptions")
-            .delete()
-            .eq("endpoint", dead[i]);
-        }
-      }
-    }
-
-    const sent = results.filter((r) => r.status === "fulfilled").length;
-    return new Response(JSON.stringify({ sent }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
+    const r = await sendTo(admin, subs as any[], {
+      title,
+      body: messageBody,
+      url: `/chat/${conversation_id}`,
+      tag: conversation_id,
     });
+    return json(r);
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+    return json({ error: String(e) }, 500);
   }
 });

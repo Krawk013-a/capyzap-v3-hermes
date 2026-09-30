@@ -64,6 +64,49 @@ export default function PushFixPage() {
     void diagnose();
   }, [diagnose]);
 
+  /** Testa o CAMINHO SERVIDOR (Edge Function + VAPID + push com app fechado). */
+  async function testServerPush() {
+    setWorking(true);
+    setResult(null);
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setResult("Sessão expirada — loga de novo 🦫");
+        setWorking(false);
+        return;
+      }
+      const fnUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/notify-push?test=1`;
+      const res = await fetch(fnUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim(),
+          "Content-Type": "application/json",
+        },
+      });
+      const data = (await res.json()) as Record<string, unknown>;
+
+      if (res.status === 401) setResult("Sessão inválida — loga de novo.");
+      else if (data.error === "no-subscriptions")
+        setResult("Nenhum device inscrito no servidor. Clica em \"Forçar ativação\" primeiro 🦫");
+      else if (data.error === "vapid-missing")
+        setResult("Faltam os secrets VAPID na Edge Function. No terminal: supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... 🦫");
+      else if (typeof data.sent === "number")
+        setResult(
+          data.sent > 0
+            ? `✅ Servidor OK! ${data.sent} push enviado(s) — chegou a notificação? (app pode estar fechado!)`
+            : "Servidor respondeu mas nada chegou. Roda: supabase functions deploy notify-push"
+        );
+      else setResult("Resposta inesperada: " + JSON.stringify(data));
+    } catch (e) {
+      setResult("Não consegui chamar a função. Ela foi deployada? supabase functions deploy notify-push");
+    } finally {
+      setWorking(false);
+    }
+  }
+
   async function forceEverything() {
     setWorking(true);
     setResult(null);
@@ -206,6 +249,19 @@ export default function PushFixPage() {
           >
             {working ? "Ativando…" : "🔧 Forçar ativação (repara tudo)"}
           </button>
+
+          <button
+            onClick={() => void testServerPush()}
+            disabled={working}
+            className="capy-btn-secondary mt-2 w-full text-sm"
+          >
+            📡 Testar notificação pelo SERVIDOR (app fechado)
+          </button>
+
+          <p className="mt-2 text-center text-[11px] leading-relaxed text-capy-dark/50">
+            O teste local prova o navegador; o teste do servidor prova o caminho
+            com app fechado (Edge Function + VAPID + Webhook).
+          </p>
 
           {result && (
             <div className="mt-4 rounded-xl bg-capy-bubble/60 px-4 py-3 text-sm text-capy-deep">

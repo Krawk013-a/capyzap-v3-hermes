@@ -278,9 +278,9 @@ export default function ChatRoom() {
         )
         .subscribe();
 
-      // POLLING de backup (rede de escola mata websocket com frequência):
-      // a cada 8s puxa o que vier depois da última mensagem conhecida.
-      pollTimer.current = window.setInterval(async () => {
+      // POLLING adaptativo: 4s com a aba oculta (notifica rápido),
+      // 8s com a aba visível (economiza bateria/dados).
+      const tick = async () => {
         const { data } = await supabase
           .from("messages")
           .select("*")
@@ -315,7 +315,22 @@ export default function ChatRoom() {
           lastStampRef.current = latest;
           requestAnimationFrame(() => scrollToBottom());
         }
-      }, 8000);
+      };
+
+      let pollDelay = document.hidden ? 4000 : 8000;
+      const schedulePoll = () => {
+        if (pollTimer.current) window.clearInterval(pollTimer.current);
+        pollTimer.current = window.setInterval(() => {
+          const want = document.hidden ? 4000 : 8000;
+          if (want !== pollDelay) {
+            pollDelay = want;
+            schedulePoll();
+            return;
+          }
+          void tick();
+        }, pollDelay);
+      };
+      schedulePoll();
 
       const ch = supabase
         .channel(`capy-room-${convoId}`)

@@ -1,6 +1,15 @@
 {
   "updates": [
     {
+      "version": "1.5.1",
+      "title": "Notificações mais rápidas",
+      "date": "2026-09-29",
+      "items": [
+        "⚡ Notificação em 2º plano agora chega em ~4s (era ~8s)",
+        "📡 Novo botão “testar pelo servidor” — prova o push com app fechado e diz o que falta"
+      ]
+    },
+    {
       "version": "1.5.0",
       "title": "Fila offline 🌥️",
       "date": "2026-09-29",
