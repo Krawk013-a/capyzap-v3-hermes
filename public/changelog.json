@@ -1,6 +1,16 @@
 {
   "updates": [
     {
+      "version": "1.4.2",
+      "title": "Áudio e sons consertados",
+      "date": "2026-09-29",
+      "items": [
+        "🎤 Áudio gravado voltou a abrir e tocar (arquivo estava saindo corrompido)",
+        "⏱️ Duração do áudio agora aparece certa (não mais “0 segundos”)",
+        "🔔 Plim toca UMA vez por mensagem nova (não mais a cada poucos segundos)"
+      ]
+    },
+    {
       "version": "1.4.1",
       "title": "Correções rápidas",
       "date": "2026-09-29",

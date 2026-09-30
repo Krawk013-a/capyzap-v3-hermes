@@ -216,13 +216,15 @@ export default function ChatSidebar() {
     }
   }
 
-  // modal de novidades: abre sozinho quando há versão não vista
+  // modal de novidades: abre UMA vez quando há versão nova e marca VISTO
+  // imediatamente — se a pessoa fechar rápido ou navegar, não volta.
   useEffect(() => {
     if (hasUnseen) {
       setWhatsNewOpen(true);
-      markSeen(true);
+      markSeen(true); // grava no localStorage ANTES do modal carregar
     }
-  }, [hasUnseen, markSeen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasUnseen]);
 
   // debounce da busca de pessoas
   useEffect(() => {

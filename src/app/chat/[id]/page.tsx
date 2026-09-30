@@ -56,11 +56,22 @@ export default function ChatRoom() {
   const lastTypingSentRef = useRef(0);
 
   const bottomRef = useRef<HTMLDivElement>(null);
-  const recRef = useRef<{ rec: MediaRecorder; chunks: Blob[]; timer: number } | null>(null);
+  const recRef = useRef<
+    | {
+        rec: MediaRecorder;
+        chunks: Blob[];
+        timer: number;
+        cancelled?: boolean;
+        finalDuration?: number;
+      }
+    | null
+  >(null);
   const lastReadOkRef = useRef<string>("");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const pollTimer = useRef<number | null>(null);
   const lastStampRef = useRef<string>("");
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
 
   const scrollToBottom = useCallback((smooth = true) => {
     bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
@@ -223,12 +234,14 @@ export default function ChatRoom() {
           .limit(50);
         if (data && data.length > 0) {
           let latest = lastStampRef.current;
+          const freshIds = new Set(messagesRef.current.map((x) => x.id));
           for (const m of data as Message[]) {
-            mergeMessage(m);
-            if (m.sender_id !== user.id) {
+            const isNew = !freshIds.has(m.id); // já estava na tela? não é nova
+            mergeMessage(m); // dedupe por id: não duplica
+            if (isNew && m.sender_id !== user.id) {
               markConversationRead(convoId);
               if (document.hidden) {
-                void playPlim();
+                void playPlim(); // só toca UMA vez por mensagem nova
                 void showLocalNotification(
                   "CapyZap — nova mensagem",
                   m.kind === "audio"
@@ -417,19 +430,24 @@ export default function ChatRoom() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = pickRecorderMime();
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-      const chunks: Blob[] = [];
+      const state = { rec, chunks: [] as Blob[], timer: 0, cancelled: false, finalDuration: 0 };
+      recRef.current = state;
       rec.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
+        if (e.data && e.data.size > 0) state.chunks.push(e.data);
       };
       rec.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(chunks, { type: rec.mimeType });
-        if (blob.size < 800) return; // cliques acidentais
-        await uploadAudio(blob);
+        if (state.cancelled) return; // usuário cancelou — não sobe nada
+        const blob = new Blob(state.chunks, { type: rec.mimeType || mime });
+        if (blob.size < 1000) {
+          setError("Gravação muito curtinha 🦫 segura o botão e fala algo.");
+          return;
+        }
+        await uploadAudio(blob, state.finalDuration);
       };
       rec.start(250);
       const timer = window.setInterval(() => setRecSeconds((s) => s + 1), 1000);
-      recRef.current = { rec, chunks, timer };
+      state.timer = timer;
       setRecording(true);
       setRecSeconds(0);
     } catch {
@@ -437,7 +455,7 @@ export default function ChatRoom() {
     }
   }
 
-  async function uploadAudio(blob: Blob) {
+  async function uploadAudio(blob: Blob, duration: number) {
     const supabase = getSupabaseBrowserClient();
     const ext = audioExtForMime(blob.type || "audio/webm");
     const path = `${convoId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -445,15 +463,20 @@ export default function ChatRoom() {
       .from("audio")
       .upload(path, blob, { contentType: blob.type || "audio/webm" });
     if (upErr) {
-      setError("Falha ao subir o áudio 🦫 tenta de novo.");
+      setError("Falha ao subir o áudio: " + upErr.message);
       return;
     }
     try {
-      const msg = await sendAudioMessage(convoId, path, recSecondsRef.current);
+      const msg = await sendAudioMessage(convoId, path, Math.max(1, duration));
       mergeMessage(msg); // aparece na hora
       requestAnimationFrame(() => scrollToBottom());
-    } catch {
-      setError("Falha ao enviar áudio 🦫");
+    } catch (e) {
+      const m = e instanceof Error ? e.message : "";
+      if (m.includes("audio_duration") || m.includes("column")) {
+        setError("Roda o migration v2/v3 no SQL Editor 🦫");
+      } else {
+        setError("Falha ao enviar áudio 🦫");
+      }
     }
   }
 
@@ -466,17 +489,23 @@ export default function ChatRoom() {
     const r = recRef.current;
     if (!r) return;
     window.clearInterval(r.timer);
-    r.chunks.length = 0;
     setRecording(false);
+    recRef.current = null;
     if (cancel) {
-      r.rec.onstop = null;
-      r.rec.stream?.getTracks().forEach((t) => t.stop());
-      r.rec.stop();
-      recRef.current = null;
+      r.cancelled = true;
+      r.rec.onstop = null; // impede o upload no onstop
+      try {
+        r.rec.stream.getTracks().forEach((t) => t.stop());
+      } catch {}
+      try {
+        r.rec.stop();
+      } catch {}
       return;
     }
-    r.rec.stop();
-    recRef.current = null;
+    // NÃO zera os chunks aqui! O onstop precisa deles pra montar o blob.
+    // Marca a duração ANTES do stop (recSeconds para de contar agora).
+    r.finalDuration = recSecondsRef.current;
+    r.rec.stop(); // onstop dispara o upload com o blob completo
   }
 
   async function handleSaveEdit() {

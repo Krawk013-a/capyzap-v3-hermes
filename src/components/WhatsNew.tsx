@@ -36,14 +36,7 @@ export default function WhatsNew({ forceOpen, onClose }: { forceOpen?: boolean; 
 
   const latest = updates[0]?.version ?? null;
 
-  // marca a versão como vista quando o modal é aberto/fechado com ela na tela
-  useEffect(() => {
-    if (!forceOpen && latest) {
-      try {
-        localStorage.setItem(LS_KEY, latest);
-      } catch {}
-    }
-  }, [forceOpen, latest]);
+  // sem efeito de marcação aqui — quem grava é o markSeen (ao fechar/auto-open)
 
   if (loading || updates.length === 0) return null;
 
@@ -105,14 +98,13 @@ export default function WhatsNew({ forceOpen, onClose }: { forceOpen?: boolean; 
   );
 }
 
-/** A versão atual do app (a mais nova do changelog). */
+/** Há versão não vista? (compara com o localStorage imediatamente) */
 export function useWhatsNewSeen(): [boolean, (seen: boolean) => void] {
   const [unseen, setUnseen] = useState(false);
-  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    fetch("/changelog.json")
+    fetch("/changelog.json", { cache: "no-store" })
       .then((r) => r.json())
       .then((d: { updates: Update[] }) => {
         if (!alive) return;
@@ -122,16 +114,28 @@ export function useWhatsNewSeen(): [boolean, (seen: boolean) => void] {
           last = localStorage.getItem(LS_KEY) ?? "";
         } catch {}
         if (latest && latest !== last) setUnseen(true);
-        setChecked(true);
       })
-      .catch(() => alive && setChecked(true));
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
+  // marca como vista: grava NO localStorage na hora (sobrevive a navegação/F5)
   const markSeen = (seen: boolean) => {
-    setUnseen(!seen);
+    if (!seen) return;
+    setUnseen(false);
+    fetch("/changelog.json", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { updates: Update[] }) => {
+        const latest = d.updates?.[0]?.version;
+        if (latest) {
+          try {
+            localStorage.setItem(LS_KEY, latest);
+          } catch {}
+        }
+      })
+      .catch(() => {});
   };
-  return [checked && unseen, markSeen];
+  return [unseen, markSeen];
 }
