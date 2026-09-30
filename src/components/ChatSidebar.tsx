@@ -469,6 +469,22 @@ export default function ChatSidebar() {
           <p className="text-xs font-semibold text-capy-deep">
             🔔 Quase lá! Roda o SQL do push no Supabase pra fechar.
           </p>
+          <Link
+            href="/notifications"
+            className="mt-2 inline-block text-xs font-bold text-capy-green hover:underline"
+          >
+            Abrir diagnóstico de notificações →
+          </Link>
+        </div>
+      )}
+      {pushState !== "active" && pushState !== "checking" && (
+        <div className="px-4 pb-2 pt-1">
+          <Link
+            href="/notifications"
+            className="text-[11px] font-medium text-capy-dark/40 hover:text-capy-green"
+          >
+            🔔 Configurar / forçar notificações
+          </Link>
         </div>
       )}
 

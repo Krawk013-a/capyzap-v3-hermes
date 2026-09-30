@@ -1,6 +1,15 @@
 {
   "updates": [
     {
+      "version": "1.4.1",
+      "title": "Correções rápidas",
+      "date": "2026-09-29",
+      "items": [
+        "✏️ Editar mensagem voltou a funcionar mesmo antes da migration (avisa o que falta)",
+        "🔧 Nova tela de diagnóstico: forçar/ativar notificações em 1 toque (funciona no PWA)"
+      ]
+    },
+    {
       "version": "1.4.0",
       "title": "Editar, digitando… e online",
       "date": "2026-09-29",

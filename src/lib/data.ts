@@ -169,13 +169,32 @@ export async function sendImageMessage(
   return data as Message;
 }
 
-/** Edita o texto da própria mensagem (só o autor pode — RLS garante). */
-export async function editMessage(messageId: string, newBody: string) {
+/** Edita o texto da própria mensagem (só o autor pode — RLS garante).
+ * Se a coluna edited_at ainda não existir (migration-v3 não rodada),
+ * cai pro plano B: edita sem o selo "editada" e sinaliza pro usuário. */
+export async function editMessage(
+  messageId: string,
+  newBody: string
+): Promise<{ ok: boolean; full: boolean }> {
   const { error } = await sb()
     .from("messages")
     .update({ body: newBody, edited_at: new Date().toISOString() })
     .eq("id", messageId);
-  if (error) throw error;
+  if (!error) return { ok: true, full: true };
+
+  // PGRST204 = coluna fora do schema cache (migration-v3 pendente)
+  const missingCol =
+    error.code === "PGRST204" ||
+    /schema cache|edited_at|Could not find/i.test(error.message ?? "");
+  if (missingCol) {
+    const { error: err2 } = await sb()
+      .from("messages")
+      .update({ body: newBody })
+      .eq("id", messageId);
+    if (!err2) return { ok: true, full: false };
+    throw err2;
+  }
+  throw error;
 }
 
 /** Heartbeat de "online" (atualiza last_seen_at do próprio perfil). */

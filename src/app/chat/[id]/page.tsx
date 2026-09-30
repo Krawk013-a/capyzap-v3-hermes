@@ -484,14 +484,26 @@ export default function ChatRoom() {
     const body = editDraft.trim();
     if (!body) return;
     try {
-      await editMessage(editingMsg.id, body);
+      const result = await editMessage(editingMsg.id, body);
       setMessages((prev) =>
         prev.map((x) =>
-          x.id === editingMsg.id ? { ...x, body, edited_at: new Date().toISOString() } : x
+          x.id === editingMsg.id
+            ? {
+                ...x,
+                body,
+                edited_at: result.full
+                  ? new Date().toISOString()
+                  : x.edited_at ?? null,
+              }
+            : x
         )
       );
       setEditingMsg(null);
       setEditDraft("");
+      if (!result.full) {
+        // edição funcionou, mas sem o selo "editada" (migration-v3 pendente)
+        setError("Edição salva! Selo \"editada\" chega depois de rodar o migration-v3.sql 🦫");
+      }
     } catch {
       setError("Não consegui salvar a edição 🦫");
     }
