@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
         tag: "capyzap-test",
       });
       // vapidPubPrefix: p/ o app comparar com a chave que o NAVEGADOR usou
-      return json({ ...r, subs: subs.length, vapidPubPrefix: VAPID_PUBLIC_KEY.slice(0, 16) });
+      return json({ ...r, subs: subs.length, vapidPubPrefix: VAPID_PUBLIC.slice(0, 16) });
     }
 
     // ============ WEBHOOK (INSERT em messages) ============
