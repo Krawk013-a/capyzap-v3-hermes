@@ -69,18 +69,28 @@ Deno.serve(async (req) => {
         action: "impersonate",
       });
 
-      // gera um token de acesso limitado ao usuário alvo
+      // e-mail do alvo
+      const { data: target } = await ctx.admin
+        .from("profiles")
+        .select("email")
+        .eq("id", targetId)
+        .single();
+      const targetEmail = target?.email ?? "";
+      if (!targetEmail) return json({ error: "target-not-found" }, 404);
+
+      // generateLink (magiclink) devolve token_hash + verify_url —
+      // o verify aceita { type, token_hash, email } (não o token bruto!)
       const { data: link, error } = await ctx.admin.auth.admin.generateLink({
         type: "magiclink",
-        email: (await ctx.admin
-          .from("profiles")
-          .select("email")
-          .eq("id", targetId)
-          .single()).data?.email ?? "",
+        email: targetEmail,
       });
-      if (error || !link) return json({ error: "link-failed", detail: error?.message }, 500);
+      if (error || !link?.properties?.token_hash) {
+        return json(
+          { error: "link-failed", detail: error?.message ?? "sem token_hash" },
+          500
+        );
+      }
 
-      // troca o magic link por uma sessão de verdade (propria API do supabase)
       const verifyRes = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
         method: "POST",
         headers: {
@@ -89,13 +99,16 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           type: "magiclink",
-          token: link.properties?.hashed_token ?? link.action_link.split("token=")[1]?.split("&")[0],
-          redirect_to: `${SUPABASE_URL}/auth/v1/verify`,
+          token_hash: link.properties.token_hash,
+          email: targetEmail,
         }),
       });
       const verifyJson: any = await verifyRes.json();
       if (!verifyJson?.access_token) {
-        return json({ error: "verify-failed", detail: JSON.stringify(verifyJson).slice(0, 300) }, 500);
+        return json(
+          { error: "verify-failed", detail: JSON.stringify(verifyJson).slice(0, 300) },
+          500
+        );
       }
 
       return json({

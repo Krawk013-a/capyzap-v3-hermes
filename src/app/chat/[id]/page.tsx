@@ -29,6 +29,7 @@ import type { Message, Profile } from "@/types";
 
 type ConvoInfo = {
   is_group: boolean;
+  is_ai?: boolean;
   name: string | null;
   members: Profile[];
   other: Profile | null;
@@ -176,6 +177,7 @@ export default function ChatRoom() {
       if (cancelled) return;
       setInfo({
         is_group: convo.is_group,
+        is_ai: !!convo.is_ai,
         name: convo.name,
         members,
         other: convo.is_group ? null : others[0] ?? null,
@@ -631,6 +633,8 @@ export default function ChatRoom() {
   const title = info
     ? info.is_group
       ? info.name ?? "Grupo"
+      : info.is_ai
+      ? "CapyIA 🤖"
       : `${info.other?.first_name ?? "?"} ${info.other?.last_name ?? ""}`
     : "…";
 
@@ -652,7 +656,9 @@ export default function ChatRoom() {
         />
         <div className="min-w-0 flex-1">
           <p className="truncate font-bold">{title}</p>
-          {info?.is_group ? (
+          {info?.is_ai ? (
+            <p className="truncate text-xs text-white/60">assistente virtual • responde na hora</p>
+          ) : info?.is_group ? (
             <p className="truncate text-xs text-white/60">
               {otherTyping
                 ? `${otherTyping} está digitando…`

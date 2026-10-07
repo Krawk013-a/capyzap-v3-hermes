@@ -88,6 +88,15 @@ export async function fetchChatList(): Promise<ChatListItem[]> {
     const others = (membersOf.get(c.id) ?? []).filter(
       (p) => p.id !== user.id
     );
+    // conversa com a IA: garante identidade da CapyIA mesmo sem profile cache
+    if (c.is_ai && others[0]) {
+      others[0] = {
+        ...others[0],
+        first_name: others[0]?.first_name || "Capy",
+        last_name: others[0]?.last_name || "IA",
+        avatar_url: others[0]?.avatar_url || "/icons/capy.svg",
+      };
+    }
     return {
       conversation: c,
       lastMessage: last,

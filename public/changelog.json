@@ -1,6 +1,16 @@
 {
   "updates": [
     {
+      "version": "1.6.1",
+      "title": "CapyIA consertada",
+      "date": "2026-09-30",
+      "items": [
+        "🤖 Chat da CapyIA abre normal (bug do Service Worker que travava a navegação)",
+        "👁️ “Entrar como” do painel admin funcionando (token correto)",
+        "🦫 Conversa da IA sempre identificada como “CapyIA 🤖” na lista e no topo"
+      ]
+    },
+    {
       "version": "1.6.0",
       "title": "CapyIA, admin, tema escuro e figurinhas 🚀",
       "date": "2026-09-30",
