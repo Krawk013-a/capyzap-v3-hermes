@@ -666,11 +666,18 @@ export default function ChatRoom() {
             </p>
           ) : (
             <p className="truncate text-xs text-white/60">
-              {otherTyping
-                ? "digitando…"
-                : otherSeen === "ONLINE"
-                ? "online"
-                : fmtLastSeen(otherSeen)}
+              {otherTyping ? (
+              <span className="inline-flex items-center gap-1">
+                digitando
+                <span className="typing-dots" aria-label="digitando">
+                  <span>.</span><span>.</span><span>.</span>
+                </span>
+              </span>
+            ) : otherSeen === "ONLINE" ? (
+              "online"
+            ) : (
+              fmtLastSeen(otherSeen)
+            )}
             </p>
           )}
         </div>
