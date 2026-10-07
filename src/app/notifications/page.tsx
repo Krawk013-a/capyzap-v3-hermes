@@ -103,10 +103,12 @@ export default function PushFixPage() {
       else if (data.error === "no-subscriptions")
         setResult("Nenhum device inscrito no servidor. Clica em \"Forçar ativação\" primeiro 🦫");
       else if (data.error === "vapid-missing")
-        setResult("Faltam os secrets VAPID na Edge Function. No terminal: supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... 🦫");
+        setResult(
+          `Configuração VAPID do servidor: ${typeof data.detail === "string" ? data.detail : "secrets ausentes ou inválidos"} 🦫`
+        );
       else if (vapidMismatch)
         setResult(
-          "🔑 AS CHAVES NÃO BATEM: a VAPID do navegador é diferente da que está nos secrets do servidor. Roda de novo (uma linha só): supabase secrets set VAPID_PRIVATE_KEY=vqNcbJWWCDKxMdrZB0fPTybYkFfYWN1Mrm4lGx_bRSg VAPID_PUBLIC_KEY=BC6Q6RPb3-jfz7uk9mQOMuvPpsDPwgIb24d_1BxXLyAzoUSYyGkxA_h8QZwvoMrISchKYk5sg_SCtzOXe1sEczY VAPID_SUBJECT=mailto:enzosilva0880@gmail.com — depois \"Forçar ativação\" de novo 🦫"
+          "🔑 AS CHAVES NÃO BATEM: a VAPID do navegador é diferente da chave do servidor. Atualize os secrets no Supabase e depois use “Forçar ativação” para criar uma nova inscrição 🦫"
         );
       else if (typeof data.sent === "number" && data.sent > 0)
         setResult(`✅ Servidor OK! ${data.sent} push enviado(s) — chegou a notificação?`);
