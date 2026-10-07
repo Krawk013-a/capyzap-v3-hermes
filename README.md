@@ -84,6 +84,26 @@ npm run build && npm start
 Deploy grátis: [Vercel](https://vercel.com) → importe o repo, adicione as mesmas
 2 variáveis de ambiente → deploy.
 
+## 🤖 CapyIA com busca na web
+
+A CapyIA usa o **GLM-5.3 via NVIDIA NIM** e pode chamar uma ferramenta de busca na internet quando a pergunta exigir informação atual.
+
+### Secrets da Edge Function
+
+Configure os secrets no Supabase:
+
+```bash
+supabase secrets set NVIDIA_API_KEY=nvapi-...
+supabase secrets set BRAVE_SEARCH_API_KEY=...
+supabase functions deploy capy-ai
+```
+
+A chave `BRAVE_SEARCH_API_KEY` é usada somente no backend da Edge Function e nunca deve ser colocada no frontend ou em `.env.local`.
+
+Sem a chave da Brave, a CapyIA continua funcionando normalmente, mas não terá a ferramenta de busca disponível.
+
+A busca usa a [Brave Search API](https://brave.com/search/api/) e retorna resultados web recentes para o GLM-5.3 usar como contexto.
+
 ## 📱 Instalar como app (PWA)
 
 - **Android/Chrome:** menu ⋮ → "Instalar app" / "Adicionar à tela inicial"
