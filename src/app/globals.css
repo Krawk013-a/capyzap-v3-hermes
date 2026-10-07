@@ -4,6 +4,45 @@
 
 :root {
   color-scheme: light;
+  --capy-green: 61 139 95;
+  --capy-deep: 47 107 74;
+  --capy-dark: 36 78 55;
+  --capy-fur: 141 103 72;
+  --capy-furlight: 169 128 91;
+  --capy-sand: 239 233 223;
+  --capy-sanddark: 227 220 204;
+  --capy-bubble: 217 242 207;
+  --capy-accent: 196 122 58;
+  --capy-danger: 217 69 63;
+}
+
+/* ====== TEMA ESCURO 🌙 ====== */
+.dark {
+  color-scheme: dark;
+  --capy-sand: 24 28 25;      /* fundo geral */
+  --capy-sanddark: 18 21 19;
+  --capy-bubble: 45 92 66;    /* bolha "minha" verde escuro */
+  --capy-fur: 128 106 86;
+  --capy-furlight: 160 140 120;
+}
+/* cards brancos → cinza-esverdeado no escuro */
+.dark .bg-white {
+  background-color: rgb(35 42 38);
+}
+/* texto principal → claro no escuro */
+.dark .text-capy-dark {
+  color: rgb(232 239 234);
+}
+/* placeholder dos inputs */
+.dark .capy-input {
+  background-color: rgb(35 42 38);
+  border-color: rgb(128 106 86 / 0.3);
+}
+/* fundo de chat com pontinhos */
+.dark .chat-bg {
+  background-color: rgb(24 28 25);
+  background-image: radial-gradient(rgb(61 139 95 / 0.08) 1.5px, transparent 1.5px);
+  background-size: 22px 22px;
 }
 
 html,

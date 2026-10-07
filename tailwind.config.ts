@@ -1,21 +1,23 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
         capy: {
-          green: "#3D8B5F",
-          deep: "#2F6B4A",
-          dark: "#244E37",
-          fur: "#8D6748",
-          furlight: "#A9805B",
-          sand: "#EFE9DF",
-          sanddark: "#E3DCCC",
-          bubble: "#D9F2CF",
-          accent: "#C47A3A",
-          danger: "#D9453F",
+          // rgb triplet vars → dark mode troca os valores em globals.css
+          green: "rgb(var(--capy-green) / <alpha-value>)",
+          deep: "rgb(var(--capy-deep) / <alpha-value>)",
+          dark: "rgb(var(--capy-dark) / <alpha-value>)",
+          fur: "rgb(var(--capy-fur) / <alpha-value>)",
+          furlight: "rgb(var(--capy-furlight) / <alpha-value>)",
+          sand: "rgb(var(--capy-sand) / <alpha-value>)",
+          sanddark: "rgb(var(--capy-sanddark) / <alpha-value>)",
+          bubble: "rgb(var(--capy-bubble) / <alpha-value>)",
+          accent: "rgb(var(--capy-accent) / <alpha-value>)",
+          danger: "rgb(var(--capy-danger) / <alpha-value>)",
         },
       },
       keyframes: {

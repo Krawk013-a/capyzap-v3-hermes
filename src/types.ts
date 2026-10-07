@@ -5,6 +5,8 @@ export type Profile = {
   last_name: string;
   handle: string | null;
   avatar_url: string | null;
+  last_seen_at: string | null;
+  is_admin?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -12,6 +14,7 @@ export type Profile = {
 export type Conversation = {
   id: string;
   is_group: boolean;
+  is_ai?: boolean;
   name: string | null;
   created_by: string | null;
   created_at: string;

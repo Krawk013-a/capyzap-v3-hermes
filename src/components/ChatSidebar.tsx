@@ -17,6 +17,7 @@ import { fmtChatStamp, sanitizeSearch } from "@/lib/format";
 import { useToast } from "@/components/Toast";
 import Avatar from "@/components/Avatar";
 import { registerPush, isPushActive } from "@/lib/push";
+import { useTheme } from "@/lib/theme";
 import { playPlim, primeAudio, showLocalNotification } from "@/lib/sound";
 import WhatsNew, { useWhatsNewSeen } from "@/components/WhatsNew";
 import type { ChatListItem, Profile } from "@/types";
@@ -53,6 +54,7 @@ export default function ChatSidebar() {
   const [pushWorking, setPushWorking] = useState(false);
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [hasUnseen, markSeen] = useWhatsNewSeen();
+  const [theme, changeTheme] = useTheme();
   const chatsRef = useRef<ChatListItem[]>([]);
   chatsRef.current = chats;
   const pollTimer = useRef<number | null>(null);
@@ -62,6 +64,27 @@ export default function ChatSidebar() {
     setChats(list);
     setLoading(false);
   }, []);
+
+  // admins (equipe de suporte) — sempre visíveis na sidebar
+  const [supportTeam, setSupportTeam] = useState<Profile[]>([]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const supabase = getSupabaseBrowserClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("is_admin", true)
+        .neq("id", user.id)
+        .limit(5);
+      if (alive) setSupportTeam((data ?? []) as Profile[]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [router]);
 
   useEffect(() => {
     // cleanup síncrono (StrictMode-safe)
@@ -253,6 +276,19 @@ export default function ChatSidebar() {
     return () => clearTimeout(t);
   }, [groupSearch, groupMembers]);
 
+  async function handleOpenAI() {
+    setBusy(true);
+    try {
+      const { data, error } = await getSupabaseBrowserClient().rpc("start_ai_chat");
+      if (error) throw error;
+      if (data) router.push(`/chat/${data}`);
+    } catch {
+      pushToast({ title: "Ops!", body: "Não consegui abrir — roda o migration-v5 🦫" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleStartDm(userId: string) {
     setBusy(true);
     try {
@@ -305,6 +341,13 @@ export default function ChatSidebar() {
           </h1>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => changeTheme(theme === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "Modo claro" : "Modo escuro"}
+            className="rounded-lg p-2 hover:bg-white/10"
+          >
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
           <Link
             href="/suggestions"
             title="Sugestões"
@@ -348,6 +391,49 @@ export default function ChatSidebar() {
           className="capy-input mb-3"
         />
       </div>
+
+      {/* CapyIA 🦫🤖 + equipe de suporte */}
+      {search.trim() === "" && (
+        <div className="border-y border-capy-fur/10 bg-capy-bubble/20 px-4 py-3">
+          <button
+            onClick={() => void handleOpenAI()}
+            disabled={busy}
+            className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-capy-bubble/50"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/capy.svg" alt="CapyIA" className="h-10 w-10 rounded-full bg-capy-green/20 p-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-capy-dark">CapyIA 🤖</p>
+              <p className="truncate text-xs text-capy-dark/50">pergunte qualquer coisa, de graça</p>
+            </div>
+            <span className="rounded-full bg-capy-green px-2 py-0.5 text-[10px] font-bold text-white">IA</span>
+          </button>
+
+          {supportTeam.length > 0 && (
+            <div className="mt-2">
+              <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-wide text-capy-dark/40">
+                Equipe CapyZap (suporte)
+              </p>
+              {supportTeam.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => void handleStartDm(s.id)}
+                  disabled={busy}
+                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-capy-bubble/50"
+                >
+                  <Avatar profile={s} size={28} ring />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-semibold text-capy-dark">
+                      {s.first_name} {s.last_name}
+                    </p>
+                    <p className="text-[10px] text-capy-dark/40">suporte oficial ⭐</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* resultados de busca */}
       {search.trim() !== "" ? (

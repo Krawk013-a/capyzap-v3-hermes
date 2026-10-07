@@ -7,6 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { getMyProfile, signOut } from "@/lib/data";
 import Avatar from "@/components/Avatar";
 import PushSettingsCard from "@/components/PushSettingsCard";
+import { useTheme } from "@/lib/theme";
 import type { Profile } from "@/types";
 
 export default function ProfilePage() {
@@ -17,6 +18,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [theme, changeTheme] = useTheme();
 
   useEffect(() => {
     (async () => {
@@ -129,6 +131,26 @@ export default function ProfilePage() {
             {saving ? "Salvando…" : "Salvar foto"}
           </button>
         </div>
+
+        {/* tema claro/escuro */}
+        <div className="mt-4 rounded-2xl bg-white p-5 shadow-lg ring-1 ring-capy-fur/10">
+          <h2 className="mb-3 font-bold text-capy-dark">Aparência 🌙</h2>
+          <button
+            onClick={() => changeTheme(theme === "dark" ? "light" : "dark")}
+            className="capy-btn-secondary w-full text-sm"
+          >
+            {theme === "dark" ? "☀️ Voltar pro claro" : "🌙 Modo escuro"}
+          </button>
+        </div>
+
+        {me?.is_admin && (
+          <button
+            onClick={() => router.push("/admin")}
+            className="capy-btn-secondary mt-4 w-full text-sm"
+          >
+            🛡️ Painel Admin
+          </button>
+        )}
 
         {/* notificações — config fácil aqui embaixo */}
         <PushSettingsCard />

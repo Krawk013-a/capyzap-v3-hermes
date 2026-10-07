@@ -58,6 +58,7 @@ export default function ChatRoom() {
   const [offlineMode, setOfflineMode] = useState(false);
   const [otherSeen, setOtherSeen] = useState<string | null>(null); // last_seen do outro
   const [editingMsg, setEditingMsg] = useState<Message | null>(null);
+  const [stickerOpen, setStickerOpen] = useState(false);
   const [editDraft, setEditDraft] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimerRef = useRef<number | null>(null);
@@ -789,6 +790,23 @@ export default function ChatRoom() {
         </div>
       )}
 
+      {/* figurinhas/emojis */}
+      {stickerOpen && (
+        <div className="border-t border-capy-fur/15 bg-capy-sand px-3 py-2">
+          <div className="flex flex-wrap gap-1">
+            {["😀","😂","🥰","😍","😎","🤔","😴","🥳","😭","😡","👍","👏","🙏","💪","🦫","🌿","❤️","🔥","✨","🎉","📷","🎤","🍕","⚽","🤖"].map((e) => (
+              <button
+                key={e}
+                onClick={() => setText((t) => t + e)}
+                className="rounded-lg px-1.5 py-1 text-2xl transition hover:bg-capy-bubble/60"
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* composer */}
       <footer className="flex items-end gap-2 border-t border-capy-fur/15 bg-capy-sand px-3 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
         {recording ? (
@@ -862,6 +880,21 @@ export default function ChatRoom() {
                 className="capy-input max-h-32 flex-1 resize-none py-3"
               />
             )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => handlePickImage(e.target.files?.[0] ?? null)}
+            />
+            <button
+              onClick={() => setStickerOpen((o) => !o)}
+              className="rounded-full bg-capy-fur/15 p-3.5 text-capy-dark transition hover:bg-capy-fur/25"
+              aria-label="Figurinhas"
+              title="Figurinhas e emojis"
+            >
+              😀
+            </button>
             <input
               ref={fileInputRef}
               type="file"
