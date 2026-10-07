@@ -252,10 +252,14 @@ Deno.serve(async (req) => {
 
     // Se o modelo pediu pesquisa, executa a ferramenta e dá os resultados de volta ao GLM.
     const toolCalls = firstMessage?.tool_calls ?? [];
-    if (toolCalls.length > 0) {
-      messages.push(firstMessage);
+    const processedToolCalls = toolCalls.slice(0, 2);
+    if (processedToolCalls.length > 0) {
+      messages.push({
+        ...firstMessage,
+        tool_calls: processedToolCalls,
+      });
 
-      for (const toolCall of toolCalls.slice(0, 2)) {
+      for (const toolCall of processedToolCalls) {
         if (toolCall?.function?.name !== "web_search") continue;
 
         let args: any = {};
@@ -278,43 +282,47 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Segunda chamada: responde usando os resultados da web, quando houver.
-    const finalRes = toolCalls.length > 0
-      ? await fetch(NVIDIA_URL, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${NVIDIA_API_KEY}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            model: MODEL,
-            messages,
-            max_tokens: 500,
-            temperature: 0.7,
-            reasoning_effort: "low",
-            stream: false,
-          }),
-        })
-      : firstRes;
+    // Segunda chamada somente quando houve uso da ferramenta.
+    // Se não houve busca, reutilizamos a primeira resposta sem fazer outra chamada.
+    let aiJson: any = firstJson;
 
-    if (!finalRes.ok) {
-      const errText = (await aiRes.text()).slice(0, 1000);
-      console.error("[capy-ai] NVIDIA HTTP", aiRes.status, errText);
-      await admin.from("messages").insert({
-        conversation_id,
-        sender_id: BOT_ID,
-        kind: "text",
-        body: `⚙️ CapyIA engasgou (${aiRes.status}). ${errText.slice(0, 500)} 🦫`,
+    if (processedToolCalls.length > 0) {
+      const finalRes = await fetch(NVIDIA_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${NVIDIA_API_KEY}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages,
+          max_tokens: 500,
+          temperature: 0.7,
+          reasoning_effort: "low",
+          stream: false,
+        }),
       });
-      await broadcastTyping(admin, conversation_id, false);
-      return new Response(
-        JSON.stringify({ nvidia_error: aiRes.status, details: errText }),
-        { status: 502, headers: CORS },
-      );
+
+      if (!finalRes.ok) {
+        const errText = (await finalRes.text()).slice(0, 1000);
+        console.error("[capy-ai] NVIDIA HTTP", finalRes.status, errText);
+        await admin.from("messages").insert({
+          conversation_id,
+          sender_id: BOT_ID,
+          kind: "text",
+          body: `⚙️ CapyIA engasgou (${finalRes.status}). ${errText.slice(0, 500)} 🦫`,
+        });
+        await broadcastTyping(admin, conversation_id, false);
+        return new Response(
+          JSON.stringify({ nvidia_error: finalRes.status, details: errText }),
+          { status: 502, headers: CORS },
+        );
+      }
+
+      aiJson = await finalRes.json();
     }
 
-    const aiJson: any = await finalRes.json();
     const reply: string =
       aiJson?.choices?.[0]?.message?.content ??
       "Deu ruim aqui no meu raciocínio 🦫 tenta de novo!";
