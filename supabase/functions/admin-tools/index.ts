@@ -78,17 +78,36 @@ Deno.serve(async (req) => {
       const targetEmail = target?.email ?? "";
       if (!targetEmail) return json({ error: "target-not-found" }, 404);
 
-      // generateLink (magiclink) devolve token_hash + verify_url —
-      // o verify aceita { type, token_hash, email } (não o token bruto!)
-      const { data: link, error } = await ctx.admin.auth.admin.generateLink({
+      // MÉTODO ROBUSTO: tentamos magiclink→token_hash; se o Supabase
+      // não devolver hash (política de sessão ativa), caímos pro
+      // link "invite" (sempre devolve) — sempre com fallback.
+      let tokenHash = "";
+      let linkType = "magiclink";
+
+      const { data: magic, error: magicErr } = await ctx.admin.auth.admin.generateLink({
         type: "magiclink",
         email: targetEmail,
       });
-      if (error || !link?.properties?.token_hash) {
-        return json(
-          { error: "link-failed", detail: error?.message ?? "sem token_hash" },
-          500
-        );
+      if (magic?.properties?.token_hash) {
+        tokenHash = magic.properties.token_hash;
+      } else {
+        // fallback: invite (não depende de sessão existente)
+        const { data: invite, error: invErr } = await ctx.admin.auth.admin.generateLink({
+          type: "invite",
+          email: targetEmail,
+        });
+        if (invite?.properties?.token_hash) {
+          tokenHash = invite.properties.token_hash;
+          linkType = "invite";
+        } else {
+          return json(
+            {
+              error: "link-failed",
+              detail: (magicErr?.message ?? invErr?.message ?? "nenhum link devolveu hash").slice(0, 200),
+            },
+            500
+          );
+        }
       }
 
       const verifyRes = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
@@ -98,8 +117,8 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          type: "magiclink",
-          token_hash: link.properties.token_hash,
+          type: linkType,
+          token_hash: tokenHash,
           email: targetEmail,
         }),
       });

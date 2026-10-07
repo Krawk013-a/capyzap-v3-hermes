@@ -1,6 +1,16 @@
 {
   "updates": [
     {
+      "version": "1.6.2",
+      "title": "CapyIA com GLM 4.5",
+      "date": "2026-09-30",
+      "items": [
+        "🤖 CapyIA agora usa o GLM 4.5 (low-thinking: rápido e direto)",
+        "💬 Quando algo falha, a CapyIA avisa no chat o que falta (chave, webhook)",
+        "👁️ “Entrar como” com método mais robusto (fallback automático)"
+      ]
+    },
+    {
       "version": "1.6.1",
       "title": "CapyIA consertada",
       "date": "2026-09-30",
@@ -15,7 +25,8 @@
       "title": "CapyIA, admin, tema escuro e figurinhas 🚀",
       "date": "2026-09-30",
       "items": [
-        "🤖 CapyIA: chat com IA gratuita dentro do app (Fase de Testes)",
+        "🤖 CapyIA: chat com IA gratuita dentro do app (API NVIDIA)",
+        "🛡️ Painel Admin com “entrar como” (modo suporte) + log de auditoria",
         "⭐ Equipe de suporte visível para todos os usuários",
         "🌙 Tema escuro (botão no topo e no perfil)",
         "😀 Figurinhas e emojis rápidos no chat"
