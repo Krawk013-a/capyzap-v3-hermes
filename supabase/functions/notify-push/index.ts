@@ -2,21 +2,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 
-// ============================================================
-// CapyZap — notify-push v2
-// 1) Webhook (INSERT em messages) → push pros participantes
-// 2) MODO TESTE: POST /notify-push?test=1 com Authorization do
-//    usuário logado → push de teste pra TODOS os devices dele.
-//    Usado pela tela /notifications p/ diagnosticar o caminho.
-// ============================================================
-
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
-const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
-const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:capyzap@example.com";
+const VAPID_PRIVATE = (Deno.env.get("VAPID_PRIVATE_KEY") ?? "").trim();
+const VAPID_PUBLIC = (Deno.env.get("VAPID_PUBLIC_KEY") ?? "").trim();
+const VAPID_SUBJECT = (Deno.env.get("VAPID_SUBJECT") || "mailto:capyzap@example.com").trim();
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -34,12 +26,11 @@ function vapidStatus(): { ok: boolean; reason?: string } {
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
     return { ok: true };
   } catch (e) {
-    return { ok: false, reason: `invalid VAPID configuration: ${String(e).slice(0, 180)}` };
+    return {
+      ok: false,
+      reason: `invalid VAPID configuration: ${e instanceof Error ? e.message : String(e)}`.slice(0, 240),
+    };
   }
-}
-
-function vapidReady(): boolean {
-  return vapidStatus().ok;
 }
 
 type SendError = { statusCode?: number; message: string };
@@ -53,6 +44,7 @@ async function sendTo(
   const errors: SendError[] = [];
   let sent = 0;
   let failed = 0;
+
   await Promise.allSettled(
     subs.map(async (s) => {
       try {
@@ -65,28 +57,28 @@ async function sendTo(
         failed += 1;
         errors.push({
           statusCode: err?.statusCode,
-          message: String(err?.body ?? err?.message ?? "unknown").slice(0, 200),
+          message: String(err?.body ?? err?.message ?? "unknown").slice(0, 240),
         });
         const code = err?.statusCode;
         if (code === 404 || code === 410) dead.push(s.endpoint);
       }
     })
   );
-  for (const e of dead) {
-    await admin.from("push_subscriptions").delete().eq("endpoint", e);
+
+  for (const endpoint of dead) {
+    await admin.from("push_subscriptions").delete().eq("endpoint", endpoint);
   }
+
   return { sent, failed, errors, deadEndpoints: dead };
 }
 
 Deno.serve(async (req) => {
-  // CORS preflight (o browser manda OPTIONS antes do POST de teste)
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
     const url = new URL(req.url);
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-    // ============ MODO TESTE (?test=1) ============
     if (url.searchParams.get("test") === "1") {
       const authHeader = req.headers.get("Authorization") ?? "";
       if (!authHeader) return json({ error: "missing-token" }, 401);
@@ -94,8 +86,18 @@ Deno.serve(async (req) => {
       const userClient = createClient(SUPABASE_URL, ANON_KEY, {
         global: { headers: { Authorization: authHeader } },
       });
-      const { data: { user }, error: userErr } = await userClient.auth.getUser();
-      if (userErr || !user) return json({ error: "invalid-session" }, 401);
+
+      const {
+        data: { user },
+        error: userErr,
+      } = await userClient.auth.getUser();
+
+      if (userErr || !user) {
+        return json({
+          error: "invalid-session",
+          detail: userErr?.message ?? "authenticated user not found",
+        }, 401);
+      }
 
       const { data: subs, error: subsErr } = await admin
         .from("push_subscriptions")
@@ -103,12 +105,17 @@ Deno.serve(async (req) => {
         .eq("user_id", user.id);
 
       if (subsErr) {
-        return json({ error: "subscription-query-failed", detail: subsErr.message }, 500);
+        return json({
+          error: "subscription-query-failed",
+          detail: subsErr.message,
+          code: subsErr.code,
+        }, 500);
       }
 
       if (!subs || subs.length === 0) {
         return json({ error: "no-subscriptions" }, 400);
       }
+
       const vapid = vapidStatus();
       if (!vapid.ok) {
         return json({
@@ -124,11 +131,14 @@ Deno.serve(async (req) => {
         url: "/chat",
         tag: "capyzap-test",
       });
-      // vapidPubPrefix: p/ o app comparar com a chave que o NAVEGADOR usou
-      return json({ ...r, subs: subs.length, vapidPubPrefix: VAPID_PUBLIC.slice(0, 16) });
+
+      return json({
+        ...r,
+        subs: subs.length,
+        vapidPubPrefix: VAPID_PUBLIC.slice(0, 16),
+      });
     }
 
-    // ============ WEBHOOK (INSERT em messages) ============
     const vapid = vapidStatus();
     if (!vapid.ok) {
       console.error("[notify-push] VAPID configuration error:", vapid.reason);
@@ -153,7 +163,13 @@ Deno.serve(async (req) => {
       .select("user_id")
       .eq("conversation_id", conversation_id)
       .neq("user_id", sender_id);
-    if (partsErr || !parts || parts.length === 0) return json({ no_recipients: true });
+
+    if (partsErr) {
+      console.error("[notify-push] participants query failed:", partsErr.message);
+      return json({ error: "participants-query-failed", detail: partsErr.message }, 500);
+    }
+
+    if (!parts || parts.length === 0) return json({ no_recipients: true });
 
     const [{ data: convo }, { data: sender }] = await Promise.all([
       admin.from("conversations").select("is_group, name").eq("id", conversation_id).single(),
@@ -168,20 +184,30 @@ Deno.serve(async (req) => {
       kind === "audio" ? "🎤 Áudio" : kind === "image" ? "📷 Foto" : (body ?? "").slice(0, 120);
 
     const ids = (parts as any[]).map((p) => p.user_id);
-    const { data: subs } = await admin
+    const { data: subs, error: subsErr } = await admin
       .from("push_subscriptions")
       .select("endpoint, p256dh, auth")
       .in("user_id", ids);
+
+    if (subsErr) {
+      console.error("[notify-push] subscription lookup failed:", subsErr.message);
+      return json({ error: "subscription-query-failed", detail: subsErr.message }, 500);
+    }
+
     if (!subs || subs.length === 0) return json({ no_subscriptions: true });
 
-    const r = await sendTo(admin, subs as any[], {
+    return json(await sendTo(admin, subs as any[], {
       title,
       body: messageBody,
       url: `/chat/${conversation_id}`,
       tag: conversation_id,
-    });
-    return json(r);
+    }));
   } catch (e) {
-    return json({ error: String(e) }, 500);
+    const detail = e instanceof Error ? e.message : String(e);
+    console.error("[notify-push] unhandled error:", e);
+    return json({
+      error: "unhandled-error",
+      detail: detail.slice(0, 500),
+    }, 500);
   }
 });
