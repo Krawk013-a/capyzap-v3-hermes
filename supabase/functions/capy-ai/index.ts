@@ -26,6 +26,59 @@ const CORS = {
   "Content-Type": "application/json",
 };
 
+async function broadcastTyping(
+  admin: ReturnType<typeof createClient>,
+  conversationId: string,
+  typing: boolean,
+) {
+  try {
+    const channel = admin.channel(`capy-presence-${conversationId}`);
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+
+      channel.subscribe((status) => {
+        if (status === "SUBSCRIBED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          finish();
+        }
+      });
+    });
+
+    if (typing) {
+      await channel.send({
+        type: "broadcast",
+        event: "typing",
+        payload: {
+          user_id: BOT_ID,
+          name: "CapyIA",
+          typing: true,
+        },
+      });
+    } else {
+      await channel.send({
+        type: "broadcast",
+        event: "typing",
+        payload: {
+          user_id: BOT_ID,
+          name: "CapyIA",
+          typing: false,
+        },
+      });
+    }
+
+    await admin.removeChannel(channel);
+  } catch (error) {
+    console.warn("[capy-ai] typing broadcast:", String(error));
+  }
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -69,6 +122,8 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ not_ai: true }), { headers: CORS });
     }
 
+    await broadcastTyping(admin, conversation_id, true);
+
     const { data: history } = await admin
       .from("messages")
       .select("sender_id, kind, body")
@@ -110,6 +165,7 @@ Deno.serve(async (req) => {
         kind: "text",
         body: `⚙️ CapyIA engasgou (${aiRes.status}). ${errText.slice(0, 500)} 🦫`,
       });
+      await broadcastTyping(admin, conversation_id, false);
       return new Response(
         JSON.stringify({ nvidia_error: aiRes.status, details: errText }),
         { status: 502, headers: CORS },
@@ -127,6 +183,8 @@ Deno.serve(async (req) => {
       kind: "text",
       body: reply.slice(0, 1500),
     });
+
+    await broadcastTyping(admin, conversation_id, false);
 
     return new Response(JSON.stringify({ ok: true }), { headers: CORS });
   } catch (e) {
