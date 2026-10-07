@@ -247,7 +247,7 @@ export default function ChatRoom() {
           if (d.typing) {
             // apaga o "digitando" sozinho após 4s sem novo sinal
             if (typingTimerRef.current) window.clearTimeout(typingTimerRef.current);
-            typingTimerRef.current = window.setTimeout(() => setOtherTyping(null), 4000);
+            typingTimerRef.current = window.setTimeout(() => setOtherTyping(null), 30000);
           }
         })
         .subscribe(async (status) => {
