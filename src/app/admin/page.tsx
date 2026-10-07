@@ -17,8 +17,6 @@ export default function AdminPage() {
   const [users, setUsers] = useState<Row[]>([]);
   const [me, setMe] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -62,48 +60,6 @@ export default function AdminPage() {
     void load();
   }, [load]);
 
-  async function handleImpersonate(target: Row) {
-    if (!confirm(`Entrar como ${target.first_name} ${target.last_name}?\nIsso fica registrado no log de auditoria.`)) return;
-    setBusy(true);
-    setMsg("Gerando acesso…");
-    try {
-      const supabase = getSupabaseBrowserClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/admin-tools`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${session?.access_token ?? ""}`,
-            apikey: (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim(),
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ action: "impersonate", target_id: target.id }),
-        }
-      );
-      const json = (await res.json()) as {
-        access_token?: string;
-        refresh_token?: string;
-        error?: string;
-        detail?: string;
-      };
-      if (json.access_token && json.refresh_token) {
-        await supabase.auth.setSession({
-          access_token: json.access_token,
-          refresh_token: json.refresh_token,
-        });
-        router.replace("/chat");
-        router.refresh();
-        return;
-      }
-      setMsg("Falhou: " + (json.detail ?? json.error ?? "?"));
-    } catch (e) {
-      setMsg("Falhou: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <main className="flex min-h-dvh flex-col bg-capy-sand">
       <header className="flex items-center gap-3 bg-capy-dark px-3 py-2.5 text-white">
@@ -123,17 +79,15 @@ export default function AdminPage() {
       </header>
 
       <div className="mx-auto w-full max-w-2xl flex-1 p-4">
+        <div className="mb-4 rounded-xl bg-capy-bubble/40 px-4 py-3 text-xs text-capy-deep">
+          🔒 Painel apenas informativo. O CapyZap não acessa a conta de ninguém —
+          conversas são privadas e este recurso de "entrar como" foi removido.
+        </div>
         {banner && (
           <div className="mb-4 rounded-xl bg-capy-danger/10 px-4 py-3 text-sm text-capy-danger">
             {banner}
           </div>
         )}
-        {msg && (
-          <div className="mb-4 rounded-xl bg-capy-accent/15 px-4 py-3 text-sm text-capy-accent">
-            {msg}
-          </div>
-        )}
-
         {loading ? (
           <p className="py-8 text-center text-sm text-capy-dark/50">Carregando contas…</p>
         ) : (
@@ -155,18 +109,13 @@ export default function AdminPage() {
                       : "nunca visto"}
                   </p>
                 </div>
-                <button
-                  onClick={() => void handleImpersonate(u)}
-                  disabled={busy || u.is_admin}
+                <span
                   className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-bold ${
-                    u.is_admin
-                      ? "bg-capy-fur/15 text-capy-dark/40"
-                      : "bg-capy-green text-white hover:bg-capy-deep"
+                    u.is_admin ? "bg-capy-fur/15 text-capy-dark/40" : "bg-capy-green/10 text-capy-deep"
                   }`}
-                  title={u.is_admin ? "não dá pra entrar como outro admin" : "entrar como (suporte)"}
                 >
-                  {u.is_admin ? "admin ⭐" : "entrar como 👁️"}
-                </button>
+                  {u.is_admin ? "admin ⭐" : "usuário"}
+                </span>
               </div>
             ))}
           </div>
