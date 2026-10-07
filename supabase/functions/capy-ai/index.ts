@@ -10,10 +10,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") ?? "";
+const BRAVE_SEARCH_API_KEY = Deno.env.get("BRAVE_SEARCH_API_KEY") ?? "";
 const BOT_ID = "a1b2c3d4-0000-4000-8000-00000000c0de";
 
 const MODEL = "z-ai/glm-5.3";
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
+const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 
 const SYSTEM_PROMPT =
   "Você é a CapyIA, a assistente amigável do CapyZap, um app de mensagens brasileiro para jovens. " +
@@ -79,6 +81,70 @@ async function broadcastTyping(
 }
 
 
+async function webSearch(query: string) {
+  if (!BRAVE_SEARCH_API_KEY) {
+    return {
+      ok: false,
+      error: "BRAVE_SEARCH_API_KEY não configurada",
+      results: [],
+    };
+  }
+
+  const url = new URL(BRAVE_SEARCH_URL);
+  url.searchParams.set("q", query.slice(0, 600));
+  url.searchParams.set("count", "6");
+  url.searchParams.set("country", "BR");
+  url.searchParams.set("search_lang", "pt-br");
+  url.searchParams.set("safesearch", "moderate");
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "X-Subscription-Token": BRAVE_SEARCH_API_KEY,
+    },
+  });
+
+  if (!response.ok) {
+    const error = (await response.text()).slice(0, 500);
+    console.error("[capy-ai] Brave Search HTTP", response.status, error);
+    return {
+      ok: false,
+      error: `Busca indisponível (${response.status})`,
+      results: [],
+    };
+  }
+
+  const data = await response.json();
+  const results = (data?.web?.results ?? []).slice(0, 6).map((item: any) => ({
+    title: String(item?.title ?? ""),
+    url: String(item?.url ?? ""),
+    snippet: String(item?.description ?? ""),
+  }));
+
+  return { ok: true, results };
+}
+
+const WEB_SEARCH_TOOL = {
+  type: "function",
+  function: {
+    name: "web_search",
+    description:
+      "Pesquisa a internet em tempo real. Use para informações atuais ou que possam ter mudado desde o conhecimento do modelo, como notícias, preços, lançamentos, eventos, pessoas, resultados esportivos, versões de software e fatos recentes. Não use para perguntas simples e atemporais que você já sabe responder.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Consulta objetiva para pesquisar na web, em português ou no idioma mais adequado.",
+        },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+};
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -139,7 +205,14 @@ Deno.serve(async (req) => {
       }))
       .filter((t) => t.content.length > 0);
 
-    const aiRes = await fetch(NVIDIA_URL, {
+    const messages: any[] = [
+      { role: "system", content: SYSTEM_PROMPT },
+      ...turns,
+    ];
+
+    // Primeira chamada: o GLM decide sozinho se precisa pesquisar.
+    const tools = BRAVE_SEARCH_API_KEY ? [WEB_SEARCH_TOOL] : undefined;
+    const firstRes = await fetch(NVIDIA_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${NVIDIA_API_KEY}`,
@@ -148,7 +221,9 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [{ role: "system", content: SYSTEM_PROMPT }, ...turns],
+        messages,
+        tools,
+        tool_choice: tools ? "auto" : undefined,
         max_tokens: 400,
         temperature: 0.7,
         reasoning_effort: "low",
@@ -156,7 +231,74 @@ Deno.serve(async (req) => {
       }),
     });
 
-    if (!aiRes.ok) {
+    if (!firstRes.ok) {
+      const errText = (await firstRes.text()).slice(0, 1000);
+      console.error("[capy-ai] NVIDIA HTTP", firstRes.status, errText);
+      await admin.from("messages").insert({
+        conversation_id,
+        sender_id: BOT_ID,
+        kind: "text",
+        body: `⚙️ CapyIA engasgou (${firstRes.status}). ${errText.slice(0, 500)} 🦫`,
+      });
+      await broadcastTyping(admin, conversation_id, false);
+      return new Response(
+        JSON.stringify({ nvidia_error: firstRes.status, details: errText }),
+        { status: 502, headers: CORS },
+      );
+    }
+
+    const firstJson: any = await firstRes.json();
+    const firstMessage = firstJson?.choices?.[0]?.message;
+
+    // Se o modelo pediu pesquisa, executa a ferramenta e dá os resultados de volta ao GLM.
+    const toolCalls = firstMessage?.tool_calls ?? [];
+    if (toolCalls.length > 0) {
+      messages.push(firstMessage);
+
+      for (const toolCall of toolCalls.slice(0, 2)) {
+        if (toolCall?.function?.name !== "web_search") continue;
+
+        let args: any = {};
+        try {
+          args = JSON.parse(toolCall.function.arguments ?? "{}");
+        } catch {
+          args = {};
+        }
+
+        const query = String(args?.query ?? "").trim();
+        const searchResult = query
+          ? await webSearch(query)
+          : { ok: false, error: "Consulta de busca vazia", results: [] };
+
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(searchResult),
+        });
+      }
+    }
+
+    // Segunda chamada: responde usando os resultados da web, quando houver.
+    const finalRes = toolCalls.length > 0
+      ? await fetch(NVIDIA_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${NVIDIA_API_KEY}`,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            model: MODEL,
+            messages,
+            max_tokens: 500,
+            temperature: 0.7,
+            reasoning_effort: "low",
+            stream: false,
+          }),
+        })
+      : firstRes;
+
+    if (!finalRes.ok) {
       const errText = (await aiRes.text()).slice(0, 1000);
       console.error("[capy-ai] NVIDIA HTTP", aiRes.status, errText);
       await admin.from("messages").insert({
@@ -172,7 +314,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const aiJson: any = await aiRes.json();
+    const aiJson: any = await finalRes.json();
     const reply: string =
       aiJson?.choices?.[0]?.message?.content ??
       "Deu ruim aqui no meu raciocínio 🦫 tenta de novo!";
