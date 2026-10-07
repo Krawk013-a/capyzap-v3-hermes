@@ -27,14 +27,19 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: CORS });
 
-function vapidReady(): boolean {
-  if (!VAPID_PRIVATE || !VAPID_PUBLIC) return false;
+function vapidStatus(): { ok: boolean; reason?: string } {
+  if (!VAPID_PUBLIC) return { ok: false, reason: "VAPID_PUBLIC_KEY missing" };
+  if (!VAPID_PRIVATE) return { ok: false, reason: "VAPID_PRIVATE_KEY missing" };
   try {
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: `invalid VAPID configuration: ${String(e).slice(0, 180)}` };
   }
+}
+
+function vapidReady(): boolean {
+  return vapidStatus().ok;
 }
 
 type SendError = { statusCode?: number; message: string };
@@ -92,19 +97,25 @@ Deno.serve(async (req) => {
       const { data: { user }, error: userErr } = await userClient.auth.getUser();
       if (userErr || !user) return json({ error: "invalid-session" }, 401);
 
-      const { data: subs } = await admin
+      const { data: subs, error: subsErr } = await admin
         .from("push_subscriptions")
         .select("endpoint, p256dh, auth")
         .eq("user_id", user.id);
 
+      if (subsErr) {
+        return json({ error: "subscription-query-failed", detail: subsErr.message }, 500);
+      }
+
       if (!subs || subs.length === 0) {
         return json({ error: "no-subscriptions" }, 400);
       }
-      if (!vapidReady()) {
-        return json(
-          { error: "vapid-missing", hint: "supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=..." },
-          500
-        );
+      const vapid = vapidStatus();
+      if (!vapid.ok) {
+        return json({
+          error: "vapid-missing",
+          detail: vapid.reason,
+          hint: "Configure VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in Supabase Edge Function Secrets.",
+        }, 500);
       }
 
       const r = await sendTo(admin, subs as any[], {
@@ -118,9 +129,10 @@ Deno.serve(async (req) => {
     }
 
     // ============ WEBHOOK (INSERT em messages) ============
-    if (!vapidReady()) {
-      console.error("[notify-push] VAPID secrets não configurados");
-      return json({ error: "vapid-missing" }, 500);
+    const vapid = vapidStatus();
+    if (!vapid.ok) {
+      console.error("[notify-push] VAPID configuration error:", vapid.reason);
+      return json({ error: "vapid-missing", detail: vapid.reason }, 500);
     }
 
     const payload = await req.json();
