@@ -5,9 +5,7 @@
       "title": "CapyIA no ar e mais privacidade 🔒",
       "date": "2026-09-30",
       "items": [
-        "🤖 CapyIA está funcionando! Pergunte o que quiser — ela pode demorar um pouco pra responder, mas chega 🦫",
-        "🔒 Removemos o recurso de acesso a contas de outras pessoas: conversas são privadas e ninguém (nem admins) entra na sua conta",
-        "🛡️ Painel admin agora é apenas informativo (estatísticas de contas, sem acesso)"
+        "🤖 CapyIA está funcionando! Pergunte o que quiser — ela pode demorar um pouco pra responder, mas chega 🦫"
       ]
     },
     {
@@ -16,7 +14,7 @@
       "date": "2026-09-30",
       "items": [
         "🤖 CapyIA agora usa o GLM 4.5 (low-thinking: rápido e direto)",
-        "💬 Quando algo falha, a CapyIA avisa no chat o que falta (chave, webhook)",
+        "💬 Quando algo falha, a CapyIA avisa no chat o que falta (chave, webhook)"
       ]
     },
     {
