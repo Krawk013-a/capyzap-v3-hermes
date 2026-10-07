@@ -2,7 +2,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ============================================================
-// CapyZap — CapyIA 🦫🤖 (GLM 4.5 low-thinking via NVIDIA)
+// CapyZap — CapyIA 🦫🤖 (GLM 5.3 via NVIDIA)
 // Webhook (INSERT em messages em conversas is_ai) → responde no chat.
 // Config: supabase secrets set NVIDIA_API_KEY=nvapi-...
 // ============================================================
@@ -12,7 +12,7 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const NVIDIA_API_KEY = Deno.env.get("NVIDIA_API_KEY") ?? "";
 const BOT_ID = "a1b2c3d4-0000-4000-8000-00000000c0de";
 
-const MODEL = "zai-org/glm-4.5"; // GLM 4.5 no build.nvidia.com
+const MODEL = "z-ai/glm-5.3";
 const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 
 const SYSTEM_PROMPT =
@@ -41,19 +41,17 @@ Deno.serve(async (req) => {
       body: string | null;
     };
 
-    // ignora: fora de conversa, não-texto, ou mensagens do próprio bot
     if (!conversation_id || kind !== "text" || sender_id === BOT_ID) {
       return new Response(JSON.stringify({ ignored: true }), { headers: CORS });
     }
     console.log("[capy-ai] msg recebida", { conversation_id, sender_id });
 
-    // sem chave → avisa no chat (transparência)
     if (!NVIDIA_API_KEY) {
       await admin.from("messages").insert({
         conversation_id,
         sender_id: BOT_ID,
         kind: "text",
-        body: "⚙️ Falta a chave da NVIDIA. No terminal: supabase secrets set NVIDIA_API_KEY=nvapi-... 🦫",
+        body: "⚙️ Falta a chave da NVIDIA. Configure NVIDIA_API_KEY nos Secrets da Edge Function. 🦫",
       });
       return new Response(JSON.stringify({ error: "nvidia-key-missing" }), {
         status: 500,
@@ -61,17 +59,16 @@ Deno.serve(async (req) => {
       });
     }
 
-    // confirma que é conversa com a IA
     const { data: convo } = await admin
       .from("conversations")
       .select("is_ai")
       .eq("id", conversation_id)
       .single();
+
     if (!convo?.is_ai) {
       return new Response(JSON.stringify({ not_ai: true }), { headers: CORS });
     }
 
-    // contexto: últimos 12 turnos
     const { data: history } = await admin
       .from("messages")
       .select("sender_id, kind, body")
@@ -87,7 +84,6 @@ Deno.serve(async (req) => {
       }))
       .filter((t) => t.content.length > 0);
 
-    // GLM 4.5 com raciocínio DESLIGADO (low thinking) → rápido e direto
     const aiRes = await fetch(NVIDIA_URL, {
       method: "POST",
       headers: {
@@ -100,22 +96,24 @@ Deno.serve(async (req) => {
         messages: [{ role: "system", content: SYSTEM_PROMPT }, ...turns],
         max_tokens: 400,
         temperature: 0.7,
-        chat_template_kwargs: { thinking: "disabled" },
+        reasoning_effort: "low",
+        stream: false,
       }),
     });
 
     if (!aiRes.ok) {
-      const errText = (await aiRes.text()).slice(0, 200);
+      const errText = (await aiRes.text()).slice(0, 1000);
       console.error("[capy-ai] NVIDIA HTTP", aiRes.status, errText);
       await admin.from("messages").insert({
         conversation_id,
         sender_id: BOT_ID,
         kind: "text",
-        body: `⚙️ CapyIA engasgou (${aiRes.status}). Se persistir, confira a chave NVIDIA_API_KEY. 🦫`,
+        body: `⚙️ CapyIA engasgou (${aiRes.status}). ${errText.slice(0, 500)} 🦫`,
       });
-      return new Response(JSON.stringify({ nvidia_error: aiRes.status }), {
-        headers: CORS,
-      });
+      return new Response(
+        JSON.stringify({ nvidia_error: aiRes.status, details: errText }),
+        { status: 502, headers: CORS },
+      );
     }
 
     const aiJson: any = await aiRes.json();
