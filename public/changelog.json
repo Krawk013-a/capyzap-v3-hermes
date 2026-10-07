@@ -7,7 +7,6 @@
       "items": [
         "🤖 CapyIA agora usa o GLM 4.5 (low-thinking: rápido e direto)",
         "💬 Quando algo falha, a CapyIA avisa no chat o que falta (chave, webhook)",
-        "👁️ “Entrar como” com método mais robusto (fallback automático)"
       ]
     },
     {
@@ -16,7 +15,6 @@
       "date": "2026-09-30",
       "items": [
         "🤖 Chat da CapyIA abre normal (bug do Service Worker que travava a navegação)",
-        "👁️ “Entrar como” do painel admin funcionando (token correto)",
         "🦫 Conversa da IA sempre identificada como “CapyIA 🤖” na lista e no topo"
       ]
     },
@@ -26,7 +24,6 @@
       "date": "2026-09-30",
       "items": [
         "🤖 CapyIA: chat com IA gratuita dentro do app (API NVIDIA)",
-        "🛡️ Painel Admin com “entrar como” (modo suporte) + log de auditoria",
         "⭐ Equipe de suporte visível para todos os usuários",
         "🌙 Tema escuro (botão no topo e no perfil)",
         "😀 Figurinhas e emojis rápidos no chat"
